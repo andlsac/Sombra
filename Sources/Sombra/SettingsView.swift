@@ -10,7 +10,7 @@ struct SettingsView: View {
     @State private var newPrompt = ""
     @State private var selectedAppId = ""
     @State private var newAppPrompt = ""
-    @State private var recordingShortcut = false
+    @State private var recordingTarget: String?  // "word" ou "all"
     @State private var shortcutMonitor: Any?
 
     var body: some View {
@@ -142,9 +142,9 @@ struct SettingsView: View {
 
     // MARK: - Gravador de atalho
 
-    private func toggleRecording() {
-        if recordingShortcut { stopRecording(); return }
-        recordingShortcut = true
+    private func toggleRecording(_ target: String) {
+        if recordingTarget != nil { stopRecording(); if recordingTarget == target { return } }
+        recordingTarget = target
         shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { ev in
             captureShortcut(ev)
             return nil // consome o evento (não digita no campo)
@@ -158,21 +158,30 @@ struct SettingsView: View {
         if f.contains(.option) { mods |= 2 }
         if f.contains(.control) { mods |= 4 }
         if f.contains(.shift) { mods |= 8 }
-        settings.acceptKeyCode = Int(ev.keyCode)
-        settings.acceptModifiers = mods
-        settings.acceptKeyLabel = Self.shortcutLabel(keyCode: Int(ev.keyCode), modifiers: mods, event: ev)
+        let label = Self.shortcutLabel(keyCode: Int(ev.keyCode), modifiers: mods, event: ev)
+        if recordingTarget == "all" {
+            settings.acceptAllKeyCode = Int(ev.keyCode)
+            settings.acceptAllModifiers = mods
+            settings.acceptAllKeyLabel = label
+        } else {
+            settings.acceptKeyCode = Int(ev.keyCode)
+            settings.acceptModifiers = mods
+            settings.acceptKeyLabel = label
+        }
         stopRecording()
     }
 
     private func stopRecording() {
         if let m = shortcutMonitor { NSEvent.removeMonitor(m); shortcutMonitor = nil }
-        recordingShortcut = false
+        recordingTarget = nil
     }
 
-    private func resetShortcut() {
-        settings.acceptKeyCode = 48
-        settings.acceptModifiers = 0
-        settings.acceptKeyLabel = "Tab"
+    private func resetShortcut(_ target: String) {
+        if target == "all" {
+            settings.acceptAllKeyCode = 48; settings.acceptAllModifiers = 8; settings.acceptAllKeyLabel = "⇧Tab"
+        } else {
+            settings.acceptKeyCode = 48; settings.acceptModifiers = 0; settings.acceptKeyLabel = "Tab"
+        }
     }
 
     static func shortcutLabel(keyCode: Int, modifiers: Int, event: NSEvent?) -> String {
@@ -204,7 +213,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text(L.t("Suggestion", "Sugestão")).font(.headline)
 
-            Stepper(value: $settings.suggestionWords, in: 1...10) {
+            Stepper(value: $settings.suggestionWords, in: 1...15) {
                 Text(L.t("Words per suggestion: \(settings.suggestionWords)",
                          "Palavras por sugestão: \(settings.suggestionWords)"))
             }
@@ -215,19 +224,30 @@ struct SettingsView: View {
             Toggle(L.t("Remove trailing period from suggestions",
                        "Remover ponto final das sugestões"), isOn: $settings.removeTrailingPeriod)
 
-            // Atalho para aceitar.
+            // Atalho para aceitar uma palavra.
             HStack {
-                Text(L.t("Accept shortcut", "Atalho para aceitar"))
+                Text(L.t("Accept word", "Aceitar palavra"))
                 Spacer()
-                Button(recordingShortcut ? L.t("Press keys…", "Aperte as teclas…")
-                                         : settings.acceptKeyLabel) { toggleRecording() }
+                Button(recordingTarget == "word" ? L.t("Press keys…", "Aperte as teclas…")
+                                                 : settings.acceptKeyLabel) { toggleRecording("word") }
                     .frame(minWidth: 90)
                 if settings.acceptKeyCode != 48 || settings.acceptModifiers != 0 {
-                    Button(L.t("Reset", "Padrão")) { resetShortcut() }
+                    Button(L.t("Reset", "Padrão")) { resetShortcut("word") }
                 }
             }
-            Text(L.t("Press this to accept a suggestion (default: Tab).",
-                     "Aperte isto para aceitar a sugestão (padrão: Tab)."))
+            // Atalho para aceitar a sugestão inteira.
+            HStack {
+                Text(L.t("Accept whole suggestion", "Aceitar tudo"))
+                Spacer()
+                Button(recordingTarget == "all" ? L.t("Press keys…", "Aperte as teclas…")
+                                                : settings.acceptAllKeyLabel) { toggleRecording("all") }
+                    .frame(minWidth: 90)
+                if settings.acceptAllKeyCode != 48 || settings.acceptAllModifiers != 8 {
+                    Button(L.t("Reset", "Padrão")) { resetShortcut("all") }
+                }
+            }
+            Text(L.t("\(settings.acceptKeyLabel) accepts the next word; \(settings.acceptAllKeyLabel) accepts the whole suggestion at once.",
+                     "\(settings.acceptKeyLabel) aceita a próxima palavra; \(settings.acceptAllKeyLabel) aceita a sugestão inteira de uma vez."))
                 .font(.caption).foregroundStyle(.secondary)
 
             ColorPicker(L.t("Suggestion color", "Cor da sugestão"), selection: Binding(

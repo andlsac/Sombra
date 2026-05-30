@@ -41,6 +41,15 @@ final class SombraSettings: ObservableObject {
     }
     @Published var acceptKeyLabel: String { didSet { d.set(acceptKeyLabel, forKey: K.akLabel) } }
 
+    // Atalho para aceitar a sugestão INTEIRA de uma vez (padrão ⇧Tab).
+    @Published var acceptAllKeyCode: Int {
+        didSet { d.set(acceptAllKeyCode, forKey: K.akaKey); NotificationCenter.default.post(name: .sombraShortcutChanged, object: nil) }
+    }
+    @Published var acceptAllModifiers: Int {
+        didSet { d.set(acceptAllModifiers, forKey: K.akaMods); NotificationCenter.default.post(name: .sombraShortcutChanged, object: nil) }
+    }
+    @Published var acceptAllKeyLabel: String { didSet { d.set(acceptAllKeyLabel, forKey: K.akaLabel) } }
+
     // Personalização: aprender com a escrita do usuário e favorecer seus termos.
     @Published var personalizeEnabled: Bool { didSet { d.set(personalizeEnabled, forKey: K.persOn) } }
     @Published var personalizeStrength: Double { didSet { d.set(personalizeStrength, forKey: K.persStr) } } // 0...1
@@ -69,6 +78,7 @@ final class SombraSettings: ObservableObject {
         static let blocked = "blockedApps", appPrompts = "appPrompts", appNames = "appNames"
         static let persOn = "personalizeEnabled", persStr = "personalizeStrength", persAll = "storeAllInputs"
         static let akKey = "acceptKeyCode", akMods = "acceptModifiers", akLabel = "acceptKeyLabel"
+        static let akaKey = "acceptAllKeyCode", akaMods = "acceptAllModifiers", akaLabel = "acceptAllKeyLabel"
         static let onboarded = "hasSeenOnboarding"
         static let r = "ghostR", g = "ghostG", b = "ghostB", a = "ghostA"
     }
@@ -81,7 +91,7 @@ final class SombraSettings: ObservableObject {
         appNames = (d.dictionary(forKey: K.appNames) as? [String: String]) ?? [:]
         modelPath = d.string(forKey: K.modelPath) ?? ""
         let w = d.object(forKey: K.words) as? Int ?? 4
-        suggestionWords = min(max(w, 1), 10)
+        suggestionWords = min(max(w, 1), 15)
         menuIcon = d.string(forKey: K.icon) ?? "👻"
         removeTrailingPeriod = d.object(forKey: K.trimDot) as? Bool ?? true
         personalizeEnabled = d.object(forKey: K.persOn) as? Bool ?? false
@@ -90,6 +100,9 @@ final class SombraSettings: ObservableObject {
         acceptKeyCode = d.object(forKey: K.akKey) as? Int ?? 48 // 48 = Tab
         acceptModifiers = d.object(forKey: K.akMods) as? Int ?? 0
         acceptKeyLabel = d.string(forKey: K.akLabel) ?? "Tab"
+        acceptAllKeyCode = d.object(forKey: K.akaKey) as? Int ?? 48 // Tab…
+        acceptAllModifiers = d.object(forKey: K.akaMods) as? Int ?? 8 // …+ Shift = ⇧Tab
+        acceptAllKeyLabel = d.string(forKey: K.akaLabel) ?? "⇧Tab"
         hasSeenOnboarding = d.bool(forKey: K.onboarded)
         // Padrão: cinza discreto. O usuário pode deixar vivo.
         ghostR = d.object(forKey: K.r) as? Double ?? 0.50

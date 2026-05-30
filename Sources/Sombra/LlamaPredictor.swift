@@ -48,7 +48,7 @@ final class LlamaPredictor: Predictor {
 
     func predict(prefix: String, promptContext: String) async -> String? {
         let prompt = buildPrompt(prefix: prefix, context: promptContext)
-        let words = Int32(min(max(SombraSettings.shared.suggestionWords, 1), 10))
+        let words = Int32(min(max(SombraSettings.shared.suggestionWords, 1), 15))
         let maxTokens = words * 8 + 4 // teto de segurança (subpalavras)
         return await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
             queue.async { [handle] in
