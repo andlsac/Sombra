@@ -51,12 +51,16 @@ the last word. Inspired by other apps of the genre, such as
 - **Mid-text editing** — suggests at any word boundary, not just at the line end.
 - **Per-app rules** — block apps (e.g. password managers) and set **per-app
   prompts** (email, browser, messaging…).
-- Configurable: suggestion length, bubble color/opacity, menu-bar icon.
+- **Works in most apps**, including Electron/Chromium ones (Claude, VS Code,
+  Slack…) — it turns on their Accessibility tree on demand.
+- Configurable: suggestion length (up to 15 words), **accept shortcut**, bubble
+  color/opacity, menu-bar icon.
 - **Optional personalization** — learns the words you use (stored locally) and
   gently favors them in suggestions, via a tunable "favor my words" dial.
 - **Bilingual UI** (English / Portuguese) that follows your system language.
-- **8-model catalog** to download (SmolLM2, Qwen2.5, Gemma 3, Llama 3.2 — up to
-  ~2 GB), or import any `.gguf`.
+- **9-model catalog** to download (SmolLM2, Qwen2.5, Qwen3, Gemma 3, Llama 3.2 —
+  up to ~2 GB), or import any `.gguf`.
+- **First-launch intro** that walks you through setup in a few steps.
 
 ### Requirements
 
@@ -130,8 +134,12 @@ do cursor. Você aceita apertando **Tab**.
   o **Tab** substitui. Sem custo do modelo (instantâneo).
 - **Edição no meio do texto** — sugere em qualquer fronteira de palavra.
 - **Bubble** à frente do cursor (com fallback abaixo do campo; nunca sai da tela).
+- **Funciona na maioria dos apps**, incluindo Electron/Chromium (Claude, VS Code,
+  Slack…) — liga a árvore de acessibilidade deles sob demanda.
 - **Personalização opcional** — aprende as palavras que você usa (guardadas
   localmente) e as favorece nas sugestões, com um controle de intensidade.
+- **Atalho configurável**, até **15 palavras** por sugestão, e **introdução** na
+  primeira abertura. Catálogo de **9 modelos** (inclui o Qwen3-1.7B).
 
 ### Preferências (👻 na barra de menu → "Preferências…", ⌘,)
 
