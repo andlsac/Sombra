@@ -10,6 +10,8 @@ struct SettingsView: View {
     @State private var newPrompt = ""
     @State private var selectedAppId = ""
     @State private var newAppPrompt = ""
+    @State private var recordingShortcut = false
+    @State private var shortcutMonitor: Any?
 
     var body: some View {
         TabView {
@@ -138,6 +140,64 @@ struct SettingsView: View {
         onReloadModel()
     }
 
+    // MARK: - Gravador de atalho
+
+    private func toggleRecording() {
+        if recordingShortcut { stopRecording(); return }
+        recordingShortcut = true
+        shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { ev in
+            captureShortcut(ev)
+            return nil // consome o evento (não digita no campo)
+        }
+    }
+
+    private func captureShortcut(_ ev: NSEvent) {
+        var mods = 0
+        let f = ev.modifierFlags
+        if f.contains(.command) { mods |= 1 }
+        if f.contains(.option) { mods |= 2 }
+        if f.contains(.control) { mods |= 4 }
+        if f.contains(.shift) { mods |= 8 }
+        settings.acceptKeyCode = Int(ev.keyCode)
+        settings.acceptModifiers = mods
+        settings.acceptKeyLabel = Self.shortcutLabel(keyCode: Int(ev.keyCode), modifiers: mods, event: ev)
+        stopRecording()
+    }
+
+    private func stopRecording() {
+        if let m = shortcutMonitor { NSEvent.removeMonitor(m); shortcutMonitor = nil }
+        recordingShortcut = false
+    }
+
+    private func resetShortcut() {
+        settings.acceptKeyCode = 48
+        settings.acceptModifiers = 0
+        settings.acceptKeyLabel = "Tab"
+    }
+
+    static func shortcutLabel(keyCode: Int, modifiers: Int, event: NSEvent?) -> String {
+        var s = ""
+        if modifiers & 4 != 0 { s += "⌃" }
+        if modifiers & 2 != 0 { s += "⌥" }
+        if modifiers & 8 != 0 { s += "⇧" }
+        if modifiers & 1 != 0 { s += "⌘" }
+        switch keyCode {
+        case 48: s += "Tab"
+        case 36: s += "Return"
+        case 49: s += "Space"
+        case 53: s += "Esc"
+        case 51: s += "Delete"
+        case 123: s += "←"; case 124: s += "→"; case 125: s += "↓"; case 126: s += "↑"
+        default:
+            if let ch = event?.charactersIgnoringModifiers?.first, ch.isLetter || ch.isNumber {
+                s += String(ch).uppercased()
+            } else {
+                s += "Key \(keyCode)"
+            }
+        }
+        return s
+    }
+
     // MARK: - Aparência
 
     private var appearanceTab: some View {
@@ -154,6 +214,21 @@ struct SettingsView: View {
 
             Toggle(L.t("Remove trailing period from suggestions",
                        "Remover ponto final das sugestões"), isOn: $settings.removeTrailingPeriod)
+
+            // Atalho para aceitar.
+            HStack {
+                Text(L.t("Accept shortcut", "Atalho para aceitar"))
+                Spacer()
+                Button(recordingShortcut ? L.t("Press keys…", "Aperte as teclas…")
+                                         : settings.acceptKeyLabel) { toggleRecording() }
+                    .frame(minWidth: 90)
+                if settings.acceptKeyCode != 48 || settings.acceptModifiers != 0 {
+                    Button(L.t("Reset", "Padrão")) { resetShortcut() }
+                }
+            }
+            Text(L.t("Press this to accept a suggestion (default: Tab).",
+                     "Aperte isto para aceitar a sugestão (padrão: Tab)."))
+                .font(.caption).foregroundStyle(.secondary)
 
             ColorPicker(L.t("Suggestion color", "Cor da sugestão"), selection: Binding(
                 get: { settings.ghostColor },

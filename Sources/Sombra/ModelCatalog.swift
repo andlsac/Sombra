@@ -65,6 +65,15 @@ enum ModelCatalog {
             hardware: "Apple Silicon (M1+) · 16 GB RAM"
         ),
         CatalogModel(
+            name: "Qwen3-1.7B (Q4_K_M)",
+            filename: "Qwen3-1.7B-Q4_K_M.gguf",
+            url: "https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf",
+            approxMB: 1056,
+            summary: L.t("Newer Qwen generation. Strong multilingual writing for its size.",
+                         "Geração mais nova da Qwen. Forte multilíngue e boa escrita para o tamanho."),
+            hardware: "Apple Silicon (M1+) · 16 GB RAM"
+        ),
+        CatalogModel(
             name: "Llama-3.2-1B-Instruct (Q8)",
             filename: "Llama-3.2-1B-Instruct-Q8_0.gguf",
             url: "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q8_0.gguf",

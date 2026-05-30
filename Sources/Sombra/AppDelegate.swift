@@ -17,6 +17,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 4. Liga o loop.
         engine.start()
+
+        // 5. Introdução na primeira abertura.
+        if !SombraSettings.shared.hasSeenOnboarding {
+            OnboardingWindowController.shared.show()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

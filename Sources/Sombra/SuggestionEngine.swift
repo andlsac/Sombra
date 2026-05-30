@@ -89,7 +89,20 @@ final class SuggestionEngine {
 
     // MARK: - Ciclo de vida
 
+    /// Aplica o atalho configurado ao KeyTap.
+    private func updateShortcut() {
+        keyTap.acceptKeyCode = CGKeyCode(SombraSettings.shared.acceptKeyCode)
+        keyTap.acceptModifiers = SombraSettings.shared.acceptModifiers
+    }
+
     func start() {
+        updateShortcut()
+        NotificationCenter.default.addObserver(
+            forName: .sombraShortcutChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateShortcut() }
+        }
+
         let flag = hasSuggestion
         keyTap.onTab = { [weak self] in
             // Roda na THREAD DO TAP. Decisão de consumir é só a leitura atômica

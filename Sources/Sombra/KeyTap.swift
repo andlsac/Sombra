@@ -18,7 +18,20 @@ final class KeyTap {
     private var thread: Thread?
     private var threadRunLoop: CFRunLoop?
 
-    private let kVK_Tab: CGKeyCode = 48
+    // Atalho de aceitar (configurável). Padrão: Tab (keycode 48, sem modificadores).
+    // Atualizados pela main thread; lidos no callback do tap (leitura de Int é benigna).
+    var acceptKeyCode: CGKeyCode = 48
+    var acceptModifiers: Int = 0  // bitmask 1=⌘ 2=⌥ 4=⌃ 8=⇧
+
+    /// Converte os flags de um CGEvent para o nosso bitmask de modificadores.
+    private static func modMask(_ flags: CGEventFlags) -> Int {
+        var m = 0
+        if flags.contains(.maskCommand) { m |= 1 }
+        if flags.contains(.maskAlternate) { m |= 2 }
+        if flags.contains(.maskControl) { m |= 4 }
+        if flags.contains(.maskShift) { m |= 8 }
+        return m
+    }
 
     func start() {
         let t = Thread { [weak self] in
@@ -61,8 +74,9 @@ final class KeyTap {
                 }
 
                 let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
-                if keyCode == me.kVK_Tab {
-                    if me.onTab?() == true { return nil } // consome o Tab
+                let mods = KeyTap.modMask(event.flags)
+                if keyCode == me.acceptKeyCode && mods == me.acceptModifiers {
+                    if me.onTab?() == true { return nil } // consome o atalho ao aceitar
                     return Unmanaged.passUnretained(event)
                 }
 
