@@ -32,8 +32,8 @@ the last word. Inspired by other apps of the genre, such as
 [Cotabby](https://github.com/FuJacob/cotabby).
 
 > **This is a personal project.** Anyone is free to use the app and the code. It
-> was built for the **author's own everyday use** — not for general/production
-> use — so it may have rough edges and opinionated choices. It may receive
+> was built for the **author's own everyday use**  not for general/production
+> use so it may have rough edges and opinionated choices. It may receive
 > **changes in the future**, with no commitment to support or stability.
 
 ### 🔒 Privacy — it stays on your machine
@@ -43,11 +43,11 @@ the last word. Inspired by other apps of the genre, such as
   home.
 - The **only** moment it touches the internet is when **you** press **Download**
   for a model in Preferences (files come from Hugging Face).
-- **Don't take my word for it:** the code is open — audit it. If you'd rather be
+- **Don't take my word for it:** the code is open audit it. If you'd rather be
   sure, block all of Sombra's connections with a firewall such as
   **[LuLu](https://objective-see.org/products/lulu.html)** (free & open-source),
   **Little Snitch** or **Radio Silence**. Autocomplete and correction keep working
-  fully offline — you just won't be able to download new models in-app (you can
+  fully offline you just won't be able to download new models in-app (you can
   still drop `.gguf` files into the models folder manually).
 
 ### Features
@@ -55,11 +55,11 @@ the last word. Inspired by other apps of the genre, such as
 - **Word-by-word autocomplete** — each **Tab** inserts only the next word.
 - **Spell correction** of the last word (native macOS spell-checker, multilingual)
   — shown in **orange**; Tab replaces the misspelled word.
-- **Mid-text editing** — suggests at any word boundary, not just at the line end.
+- **Mid-text editing** suggests at any word boundary, not just at the line end.
 - **Per-app rules** — block apps (e.g. password managers) and set **per-app
   prompts** (email, browser, messaging…).
 - **Works in most apps**, including Electron/Chromium ones (Claude, VS Code,
-  Slack…) — it turns on their Accessibility tree on demand.
+  Slack…) it turns on their Accessibility tree on demand.
 - Configurable: suggestion length (up to 15 words), **accept shortcut**, bubble
   color/opacity, menu-bar icon.
 - **Optional personalization** — learns the words you use (stored locally) and
@@ -139,7 +139,7 @@ do cursor. Você aceita apertando **Tab**.
 - **Correção ortográfica** (NSSpellChecker, multilíngue) — quando não há
   autocomplete e a última palavra está errada, mostra a correção em **laranja**;
   o **Tab** substitui. Sem custo do modelo (instantâneo).
-- **Edição no meio do texto** — sugere em qualquer fronteira de palavra.
+- **Edição no meio do texto**  sugere em qualquer fronteira de palavra.
 - **Bubble** à frente do cursor (com fallback abaixo do campo; nunca sai da tela).
 - **Funciona na maioria dos apps**, incluindo Electron/Chromium (Claude, VS Code,
   Slack…) — liga a árvore de acessibilidade deles sob demanda.
