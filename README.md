@@ -1,4 +1,4 @@
-# 👻 Sombra
+# Sombra
 
 **Local-AI autocomplete + spell-correction for macOS.** Runs 100% on your Mac
 (Apple Silicon, `llama.cpp` + Metal), lives in the menu bar, accept with **Tab**.
@@ -12,7 +12,7 @@
   <img src="assets/preferences.jpg" alt="Sombra — Preferences / model picker" width="430">
 </p>
 
-🇬🇧 [English](#english) · 🇧🇷 [Português](#português)
+ [English](#english) · [Português](#português)
 
 ---
 
