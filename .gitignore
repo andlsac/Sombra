@@ -1,0 +1,20 @@
+# --- Artefatos de build (recriados por scripts/bundle.sh) ---
+/.build/
+/build/
+/dist/
+
+# --- Dependências vendadas/baixadas (recriadas por scripts/build_llama.sh) ---
+/vendor/
+/Frameworks/
+
+# --- Modelos baixados (recriados por scripts/download_model.sh) ---
+/models/
+
+# --- Binários grandes em qualquer lugar (limite do GitHub: 100 MB) ---
+*.gguf
+*.dylib
+*.dmg
+*.metallib
+
+# --- macOS ---
+.DS_Store
