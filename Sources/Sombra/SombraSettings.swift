@@ -72,18 +72,27 @@ final class SombraSettings: ObservableObject {
 
     static let menuIconChoices = ["👻", "✍️", "💬", "⌨️", "✨", "🪄", "📝", "🤖"]
 
-    /// Prompts prontos para o usuário adicionar com um clique.
-    static let presetPrompts = [
-        "Escreva em Português do Brasil.",
-        "Escreva em Português de Portugal.",
-        "Write in English.",
-        "Escribe en Español.",
-        "Misturo Português e Inglês ao escrever.",
-        "Mantenha um tom formal e profissional.",
-        "Mantenha um tom casual e amigável.",
-        "Seja conciso e direto.",
-        "Use linguagem clara e simples."
-    ]
+    /// Prompts prontos para o usuário adicionar com um clique (localizados).
+    static var presetPrompts: [String] {
+        L.isPT
+        ? ["Escreva em Português do Brasil.",
+           "Escreva em Português de Portugal.",
+           "Write in English.",
+           "Escribe en Español.",
+           "Misturo Português e Inglês ao escrever.",
+           "Mantenha um tom formal e profissional.",
+           "Mantenha um tom casual e amigável.",
+           "Seja conciso e direto.",
+           "Use linguagem clara e simples."]
+        : ["Write in English.",
+           "Write in Brazilian Portuguese.",
+           "Escribe en Español.",
+           "I mix English and Portuguese when writing.",
+           "Keep a formal, professional tone.",
+           "Keep a casual, friendly tone.",
+           "Be concise and direct.",
+           "Use clear, simple language."]
+    }
 
     /// Contexto global (para a prévia na GUI).
     var promptContext: String { effectiveContext(forApp: nil) }

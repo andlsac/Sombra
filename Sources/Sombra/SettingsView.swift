@@ -13,9 +13,9 @@ struct SettingsView: View {
 
     var body: some View {
         TabView {
-            modelTab.tabItem { Label("Modelo", systemImage: "cpu") }
-            appearanceTab.tabItem { Label("Aparência", systemImage: "paintpalette") }
-            writingTab.tabItem { Label("Escrita", systemImage: "text.cursor") }
+            modelTab.tabItem { Label(L.t("Model", "Modelo"), systemImage: "cpu") }
+            appearanceTab.tabItem { Label(L.t("Appearance", "Aparência"), systemImage: "paintpalette") }
+            writingTab.tabItem { Label(L.t("Writing", "Escrita"), systemImage: "text.cursor") }
             appsTab.tabItem { Label("Apps", systemImage: "app.badge") }
         }
         .frame(width: 500, height: 470)
@@ -30,33 +30,33 @@ struct SettingsView: View {
     private var modelTab: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Modelo ativo")
+                Text(L.t("Active model", "Modelo ativo"))
                     .font(.headline)
                 Text((activePath as NSString).lastPathComponent.isEmpty
-                     ? "Nenhum (usando heurístico)"
+                     ? L.t("None (using heuristic)", "Nenhum (usando heurístico)")
                      : (activePath as NSString).lastPathComponent)
                     .font(.callout).foregroundStyle(.secondary)
 
                 Divider()
-                Text("Disponíveis").font(.subheadline).bold()
+                Text(L.t("Available", "Disponíveis")).font(.subheadline).bold()
 
                 if let base = ModelManager.bundledBase,
                    FileManager.default.fileExists(atPath: base.path) {
-                    modelRow(url: base, deletable: false, label: "Base (incluído no app)")
+                    modelRow(url: base, deletable: false, label: L.t("Base (bundled)", "Base (incluído no app)"))
                 }
                 ForEach(models.installed, id: \.path) { url in
                     modelRow(url: url, deletable: true, label: nil)
                 }
 
                 HStack {
-                    Button("Importar .gguf…") { importModel() }
+                    Button(L.t("Import .gguf…", "Importar .gguf…")) { importModel() }
                     Spacer()
-                    Button("Abrir pasta de modelos") { NSWorkspace.shared.open(ModelManager.modelsDir) }
+                    Button(L.t("Open models folder", "Abrir pasta de modelos")) { NSWorkspace.shared.open(ModelManager.modelsDir) }
                 }
                 .padding(.top, 2)
 
                 Divider()
-                Text("Baixar modelo").font(.subheadline).bold()
+                Text(L.t("Download model", "Baixar modelo")).font(.subheadline).bold()
                 ForEach(ModelCatalog.all) { catalogRow($0) }
 
                 if let err = models.lastError {
@@ -77,7 +77,7 @@ struct SettingsView: View {
             }
             Spacer()
             if !isActive {
-                Button("Usar") { settings.modelPath = url.path; onReloadModel() }
+                Button(L.t("Use", "Usar")) { settings.modelPath = url.path; onReloadModel() }
             }
             if deletable {
                 Button {
@@ -85,7 +85,7 @@ struct SettingsView: View {
                     models.remove(url)
                     onReloadModel()
                 } label: { Image(systemName: "trash") }
-                    .help("Apagar este modelo")
+                    .help(L.t("Delete this model", "Apagar este modelo"))
             }
         }
         .padding(.vertical, 3)
@@ -101,13 +101,13 @@ struct SettingsView: View {
                 Text(m.name).font(.callout).fontWeight(.medium)
                 Spacer()
                 if isInstalled {
-                    Label("Instalado", systemImage: "checkmark.circle.fill")
+                    Label(L.t("Installed", "Instalado"), systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green).font(.caption)
                 } else if isDownloading {
                     ProgressView(value: models.progress).frame(width: 100)
-                    Button("Cancelar") { models.cancelDownload() }
+                    Button(L.t("Cancel", "Cancelar")) { models.cancelDownload() }
                 } else {
-                    Button("Baixar") { models.download(m) }
+                    Button(L.t("Download", "Baixar")) { models.download(m) }
                         .disabled(models.downloadingFile != nil)
                 }
             }
@@ -142,27 +142,31 @@ struct SettingsView: View {
 
     private var appearanceTab: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Sugestão").font(.headline)
+            Text(L.t("Suggestion", "Sugestão")).font(.headline)
 
             Stepper(value: $settings.suggestionWords, in: 1...10) {
-                Text("Palavras por sugestão: \(settings.suggestionWords)")
+                Text(L.t("Words per suggestion: \(settings.suggestionWords)",
+                         "Palavras por sugestão: \(settings.suggestionWords)"))
             }
-            Text("Quantas palavras o modelo prevê e mostra de cada vez. Menos = mais rápido.")
+            Text(L.t("How many words the model predicts and shows at once. Fewer = faster.",
+                     "Quantas palavras o modelo prevê e mostra de cada vez. Menos = mais rápido."))
                 .font(.caption).foregroundStyle(.secondary)
 
-            Toggle("Remover ponto final das sugestões", isOn: $settings.removeTrailingPeriod)
+            Toggle(L.t("Remove trailing period from suggestions",
+                       "Remover ponto final das sugestões"), isOn: $settings.removeTrailingPeriod)
 
-            ColorPicker("Cor da sugestão", selection: Binding(
+            ColorPicker(L.t("Suggestion color", "Cor da sugestão"), selection: Binding(
                 get: { settings.ghostColor },
                 set: { settings.ghostColor = $0 }
             ))
             VStack(alignment: .leading) {
-                Text("Opacidade: \(Int(settings.ghostA * 100))%")
+                Text(L.t("Opacity: \(Int(settings.ghostA * 100))%",
+                         "Opacidade: \(Int(settings.ghostA * 100))%"))
                 Slider(value: $settings.ghostA, in: 0.2...1.0)
             }
 
             Divider()
-            Text("Ícone na barra de menu").font(.headline)
+            Text(L.t("Menu bar icon", "Ícone na barra de menu")).font(.headline)
             HStack(spacing: 6) {
                 ForEach(SombraSettings.menuIconChoices, id: \.self) { emoji in
                     Button(emoji) { settings.menuIcon = emoji }
@@ -182,26 +186,26 @@ struct SettingsView: View {
     private var writingTab: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text("Refinar a escrita").font(.headline)
-                Text("Adicione instruções curtas (estilo, idioma…). Elas viram o "
-                     + "contexto enviado ao modelo. Sem nada = continuação pura.")
+                Text(L.t("Refine writing", "Refinar a escrita")).font(.headline)
+                Text(L.t("Add short instructions (style, language…). They become the context sent to the model. Empty = raw continuation.",
+                         "Adicione instruções curtas (estilo, idioma…). Elas viram o contexto enviado ao modelo. Sem nada = continuação pura."))
                     .font(.caption).foregroundStyle(.secondary)
 
                 // Campo para digitar e adicionar um prompt.
                 HStack {
-                    TextField("ex.: Escreva em Português do Brasil.", text: $newPrompt,
-                              onCommit: addPrompt)
+                    TextField(L.t("e.g.: Write in English.", "ex.: Escreva em Português do Brasil."),
+                              text: $newPrompt, onCommit: addPrompt)
                         .textFieldStyle(.roundedBorder)
-                    Button("Adicionar", action: addPrompt)
+                    Button(L.t("Add", "Adicionar"), action: addPrompt)
                         .disabled(newPrompt.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
 
                 // Prompts já adicionados.
                 if settings.customPrompts.isEmpty {
-                    Text("Nenhum prompt adicionado.").font(.caption).foregroundStyle(.secondary)
+                    Text(L.t("No prompts added.", "Nenhum prompt adicionado.")).font(.caption).foregroundStyle(.secondary)
                 } else {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Prompts ativos").font(.caption).foregroundStyle(.secondary)
+                        Text(L.t("Active prompts", "Prompts ativos")).font(.caption).foregroundStyle(.secondary)
                         ForEach(Array(settings.customPrompts.enumerated()), id: \.offset) { idx, p in
                             HStack {
                                 Image(systemName: "text.quote").foregroundStyle(.secondary)
@@ -221,7 +225,7 @@ struct SettingsView: View {
                 Divider()
 
                 // Presets prontos para adicionar com um clique.
-                Text("Sugestões prontas").font(.caption).foregroundStyle(.secondary)
+                Text(L.t("Ready-made suggestions", "Sugestões prontas")).font(.caption).foregroundStyle(.secondary)
                 FlowChips(items: SombraSettings.presetPrompts.filter {
                     !settings.customPrompts.contains($0)
                 }) { preset in
@@ -243,13 +247,13 @@ struct SettingsView: View {
     private var appsTab: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text("Bloquear apps").font(.headline)
-                Text("Nesses apps a Sombra não lê o texto nem sugere. Recomendado "
-                     + "para gerenciadores de senhas e apps sensíveis.")
+                Text(L.t("Block apps", "Bloquear apps")).font(.headline)
+                Text(L.t("In these apps Sombra won't read text or suggest. Recommended for password managers and sensitive apps.",
+                         "Nesses apps a Sombra não lê o texto nem sugere. Recomendado para gerenciadores de senhas e apps sensíveis."))
                     .font(.caption).foregroundStyle(.secondary)
 
                 if settings.blockedApps.isEmpty {
-                    Text("Nenhum app bloqueado.").font(.caption).foregroundStyle(.secondary)
+                    Text(L.t("No apps blocked.", "Nenhum app bloqueado.")).font(.caption).foregroundStyle(.secondary)
                 } else {
                     ForEach(settings.blockedApps, id: \.self) { id in
                         HStack {
@@ -264,7 +268,7 @@ struct SettingsView: View {
                         .background(RoundedRectangle(cornerRadius: 6).fill(Color(NSColor.textBackgroundColor)))
                     }
                 }
-                Button("Bloquear um app…") {
+                Button(L.t("Block an app…", "Bloquear um app…")) {
                     if let a = pickApp() {
                         settings.appNames[a.id] = a.name
                         if !settings.blockedApps.contains(a.id) { settings.blockedApps.append(a.id) }
@@ -273,23 +277,23 @@ struct SettingsView: View {
 
                 Divider()
 
-                Text("Prompts por app").font(.headline)
-                Text("Instruções extras para apps específicos (email, navegador, "
-                     + "mensagens…). Somam-se aos prompts gerais.")
+                Text(L.t("Per-app prompts", "Prompts por app")).font(.headline)
+                Text(L.t("Extra instructions for specific apps (email, browser, messaging…). Added on top of the general prompts.",
+                         "Instruções extras para apps específicos (email, navegador, mensagens…). Somam-se aos prompts gerais."))
                     .font(.caption).foregroundStyle(.secondary)
 
                 let ids = settings.appPrompts.keys.sorted {
                     (settings.appNames[$0] ?? $0).localizedCaseInsensitiveCompare(settings.appNames[$1] ?? $1) == .orderedAscending
                 }
                 if ids.isEmpty {
-                    Text("Nenhum app configurado.").font(.caption).foregroundStyle(.secondary)
+                    Text(L.t("No apps configured.", "Nenhum app configurado.")).font(.caption).foregroundStyle(.secondary)
                 } else {
                     Picker("App:", selection: $selectedAppId) {
                         ForEach(ids, id: \.self) { Text(settings.appNames[$0] ?? $0).tag($0) }
                     }
                     appPromptEditor
                 }
-                Button("Adicionar app…") {
+                Button(L.t("Add app…", "Adicionar app…")) {
                     if let a = pickApp() {
                         settings.appNames[a.id] = a.name
                         if settings.appPrompts[a.id] == nil { settings.appPrompts[a.id] = [] }
@@ -307,9 +311,10 @@ struct SettingsView: View {
     private var appPromptEditor: some View {
         if !selectedAppId.isEmpty, let prompts = settings.appPrompts[selectedAppId] {
             HStack {
-                TextField("ex.: Tom informal e curto.", text: $newAppPrompt, onCommit: addAppPrompt)
+                TextField(L.t("e.g.: Casual and short tone.", "ex.: Tom informal e curto."),
+                          text: $newAppPrompt, onCommit: addAppPrompt)
                     .textFieldStyle(.roundedBorder)
-                Button("Adicionar", action: addAppPrompt)
+                Button(L.t("Add", "Adicionar"), action: addAppPrompt)
                     .disabled(newAppPrompt.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             ForEach(Array(prompts.enumerated()), id: \.offset) { idx, p in
@@ -326,7 +331,7 @@ struct SettingsView: View {
                 .padding(6)
                 .background(RoundedRectangle(cornerRadius: 6).fill(Color(NSColor.textBackgroundColor)))
             }
-            Button("Remover este app dos prompts") {
+            Button(L.t("Remove this app from prompts", "Remover este app dos prompts")) {
                 settings.appPrompts[selectedAppId] = nil
                 selectedAppId = settings.appPrompts.keys.sorted().first ?? ""
             }

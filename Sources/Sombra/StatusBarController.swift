@@ -17,7 +17,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         super.init()
         if let button = item.button {
             button.title = SombraSettings.shared.menuIcon
-            button.toolTip = "Sombra — autocomplete com IA local"
+            button.toolTip = L.t("Sombra — local-AI autocomplete", "Sombra — autocomplete com IA local")
         }
         menu.delegate = self
         item.menu = menu
@@ -41,7 +41,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.removeAllItems()
 
         let toggle = NSMenuItem(
-            title: engine.enabled ? "Pausar sugestões" : "Retomar sugestões",
+            title: engine.enabled ? L.t("Pause suggestions", "Pausar sugestões")
+                                  : L.t("Resume suggestions", "Retomar sugestões"),
             action: #selector(toggleEnabled), keyEquivalent: ""
         )
         toggle.target = self
@@ -55,8 +56,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             currentAppName = front?.localizedName ?? bid
             let blocked = SombraSettings.shared.blockedApps.contains(bid)
             let appItem = NSMenuItem(
-                title: blocked ? "Ativar neste app (\(currentAppName))"
-                               : "Desativar neste app (\(currentAppName))",
+                title: blocked ? L.t("Enable in this app (\(currentAppName))", "Ativar neste app (\(currentAppName))")
+                               : L.t("Disable in this app (\(currentAppName))", "Desativar neste app (\(currentAppName))"),
                 action: #selector(toggleCurrentApp), keyEquivalent: ""
             )
             appItem.target = self
@@ -69,24 +70,25 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         let ax = Permissions.hasAccessibility
         let axItem = NSMenuItem(
-            title: ax ? "✅ Acessibilidade concedida" : "⚠️ Conceder Acessibilidade…",
+            title: ax ? L.t("✅ Accessibility granted", "✅ Acessibilidade concedida")
+                      : L.t("⚠️ Grant Accessibility…", "⚠️ Conceder Acessibilidade…"),
             action: ax ? nil : #selector(openAccessibilitySettings),
             keyEquivalent: ""
         )
         axItem.target = self
         menu.addItem(axItem)
 
-        let model = NSMenuItem(title: "Modelo: \(engine.modelDescription)", action: nil, keyEquivalent: "")
+        let model = NSMenuItem(title: L.t("Model: \(engine.modelDescription)", "Modelo: \(engine.modelDescription)"), action: nil, keyEquivalent: "")
         model.isEnabled = false
         menu.addItem(model)
 
-        let prefs = NSMenuItem(title: "Preferências…", action: #selector(openPreferences), keyEquivalent: ",")
+        let prefs = NSMenuItem(title: L.t("Preferences…", "Preferências…"), action: #selector(openPreferences), keyEquivalent: ",")
         prefs.target = self
         menu.addItem(prefs)
 
         menu.addItem(.separator())
 
-        let quit = NSMenuItem(title: "Sair", action: #selector(quit), keyEquivalent: "q")
+        let quit = NSMenuItem(title: L.t("Quit", "Sair"), action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
     }

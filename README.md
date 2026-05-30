@@ -52,6 +52,7 @@ the last word. Inspired by other apps of the genre, such as
 - **Per-app rules** — block apps (e.g. password managers) and set **per-app
   prompts** (email, browser, messaging…).
 - Configurable: suggestion length, bubble color/opacity, menu-bar icon.
+- **Bilingual UI** (English / Portuguese) that follows your system language.
 - **8-model catalog** to download (SmolLM2, Qwen2.5, Gemma 3, Llama 3.2 — up to
   ~2 GB), or import any `.gguf`.
 
@@ -138,6 +139,8 @@ do cursor. Você aceita apertando **Tab**.
 - **Escrita** — lista de **prompts** (estilo/idioma) que dão contexto ao modelo,
   com sugestões prontas.
 - **Apps** — **bloquear apps** (não lê/sugere) e **prompts por app**.
+
+A **interface é bilíngue** (inglês / português) e segue o idioma do sistema.
 
 Na barra de menu também há **"Desativar neste app"**, para bloquear rapidamente o
 app em foco.

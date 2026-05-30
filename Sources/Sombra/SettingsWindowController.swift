@@ -15,7 +15,7 @@ final class SettingsWindowController {
             let view = SettingsView(onReloadModel: { [weak self] in self?.onReloadModel?() })
             let hosting = NSHostingController(rootView: view)
             let w = NSWindow(contentViewController: hosting)
-            w.title = "Sombra — Preferências"
+            w.title = L.t("Sombra — Preferences", "Sombra — Preferências")
             w.styleMask = [.titled, .closable]
             w.isReleasedWhenClosed = false
             window = w

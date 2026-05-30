@@ -23,7 +23,7 @@ final class SuggestionEngine {
             modelDescription = (path as NSString).lastPathComponent
         } else {
             predictor = HeuristicPredictor()
-            modelDescription = "Heurístico (sem modelo)"
+            modelDescription = L.t("Heuristic (no model)", "Heurístico (sem modelo)")
             NSLog("[Sombra] Modelo .gguf não encontrado — usando preditor heurístico.")
         }
     }
@@ -32,7 +32,7 @@ final class SuggestionEngine {
     /// O carregamento roda fora da main thread (mmap + Metal podem demorar).
     func reloadModel() {
         let path = ModelLocator.find()
-        modelDescription = "Carregando…"
+        modelDescription = L.t("Loading…", "Carregando…")
         onModelChanged?()
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let newPredictor: Predictor
@@ -42,7 +42,7 @@ final class SuggestionEngine {
                 desc = (p as NSString).lastPathComponent
             } else {
                 newPredictor = HeuristicPredictor()
-                desc = "Heurístico (sem modelo)"
+                desc = L.t("Heuristic (no model)", "Heurístico (sem modelo)")
             }
             DispatchQueue.main.async {
                 guard let self else { return }
