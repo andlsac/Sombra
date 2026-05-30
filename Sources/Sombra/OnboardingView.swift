@@ -88,7 +88,7 @@ struct OnboardingView: View {
 }
 
 @MainActor
-final class OnboardingWindowController {
+final class OnboardingWindowController: NSObject, NSWindowDelegate {
     static let shared = OnboardingWindowController()
     private var window: NSWindow?
 
@@ -101,10 +101,20 @@ final class OnboardingWindowController {
             w.title = "Sombra"
             w.styleMask = [.titled, .closable]
             w.isReleasedWhenClosed = false
+            w.delegate = self
+            w.level = .floating
             window = w
         }
+        // App de menu bar (.accessory) não traz janela pra frente no launch.
+        // Vira regular temporariamente para a janela aparecer e receber foco.
+        NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         window?.center()
         window?.makeKeyAndOrderFront(nil)
+        window?.orderFrontRegardless()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory) // volta a ser só barra de menu
     }
 }
