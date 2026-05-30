@@ -1,4 +1,6 @@
-# Sombra
+<h1>
+  <img src="assets/icon.png" alt="Sombra icon" width="56" align="absmiddle">&nbsp; Sombra
+</h1>
 
 **Local-AI autocomplete + spell-correction for macOS.** Runs 100% on your Mac
 (Apple Silicon, `llama.cpp` + Metal), lives in the menu bar, accept with **Tab**.
