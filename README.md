@@ -12,6 +12,11 @@
   <img src="assets/preferences.jpg" alt="Sombra — Preferences / model picker" width="430">
 </p>
 
+<p align="center">
+  <img src="assets/learning.jpg" alt="Sombra learning from your writing (personalization)" width="640"><br>
+  <em>Optional personalization: Sombra learns the words you use and favors them.</em>
+</p>
+
  [English](#english) · [Português](#português)
 
 ---
