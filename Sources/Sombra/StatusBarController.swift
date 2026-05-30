@@ -15,21 +15,47 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         self.engine = engine
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
-        if let button = item.button {
-            button.title = SombraSettings.shared.menuIcon
-            button.toolTip = L.t("Sombra — local-AI autocomplete", "Sombra — autocomplete com IA local")
-        }
+        item.button?.toolTip = L.t("Sombra — local-AI autocomplete", "Sombra — autocomplete com IA local")
+        applyMenuIcon()
+        applyDockPolicy()
         menu.delegate = self
         item.menu = menu
         NotificationCenter.default.addObserver(
             forName: .sombraIconChanged, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.item.button?.title = SombraSettings.shared.menuIcon
-            }
+            MainActor.assumeIsolated { self?.applyMenuIcon() }
+        }
+        NotificationCenter.default.addObserver(
+            forName: .sombraDockChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.applyDockPolicy() }
         }
         SettingsWindowController.shared.onReloadModel = { [weak engine] in engine?.reloadModel() }
         rebuildMenu()
+    }
+
+    /// Ícone da barra de menu: emoji (título) ou imagem ("@black"/"@white").
+    private func applyMenuIcon() {
+        guard let button = item.button else { return }
+        let icon = SombraSettings.shared.menuIcon
+        if icon == "@black" || icon == "@white" {
+            let name = icon == "@black" ? "menu-black" : "menu-white"
+            if let url = Bundle.main.url(forResource: name, withExtension: "png"),
+               let img = NSImage(contentsOf: url) {
+                img.size = NSSize(width: 18, height: 18)
+                img.isTemplate = false // respeita a cor escolhida
+                button.image = img
+                button.title = ""
+                return
+            }
+        }
+        button.image = nil
+        button.title = icon
+    }
+
+    /// Mostra ou não no Dock, conforme a preferência.
+    func applyDockPolicy() {
+        NSApp.setActivationPolicy(SombraSettings.shared.showInDock ? .regular : .accessory)
     }
 
     /// Repopula o menu sempre que ele vai abrir (mantém o app atual em dia).

@@ -4,6 +4,7 @@ import AppKit
 extension Notification.Name {
     static let sombraIconChanged = Notification.Name("sombraIconChanged")
     static let sombraShortcutChanged = Notification.Name("sombraShortcutChanged")
+    static let sombraDockChanged = Notification.Name("sombraDockChanged")
 }
 
 /// Preferências persistidas (UserDefaults). Observável pela GUI.
@@ -49,6 +50,11 @@ final class SombraSettings: ObservableObject {
     // Já viu a introdução (onboarding)?
     @Published var hasSeenOnboarding: Bool { didSet { d.set(hasSeenOnboarding, forKey: K.onboarded) } }
 
+    // Mostrar o app no Dock (padrão: só na barra de menu).
+    @Published var showInDock: Bool {
+        didSet { d.set(showInDock, forKey: K.dock); NotificationCenter.default.post(name: .sombraDockChanged, object: nil) }
+    }
+
     // Emoji do ícone na barra de menu.
     @Published var menuIcon: String {
         didSet {
@@ -69,7 +75,7 @@ final class SombraSettings: ObservableObject {
         static let blocked = "blockedApps", appPrompts = "appPrompts", appNames = "appNames"
         static let persOn = "personalizeEnabled", persStr = "personalizeStrength", persAll = "storeAllInputs"
         static let akKey = "acceptKeyCode", akMods = "acceptModifiers", akLabel = "acceptKeyLabel"
-        static let onboarded = "hasSeenOnboarding"
+        static let onboarded = "hasSeenOnboarding", dock = "showInDock"
         static let r = "ghostR", g = "ghostG", b = "ghostB", a = "ghostA"
     }
 
@@ -91,6 +97,7 @@ final class SombraSettings: ObservableObject {
         acceptModifiers = d.object(forKey: K.akMods) as? Int ?? 0
         acceptKeyLabel = d.string(forKey: K.akLabel) ?? "Tab"
         hasSeenOnboarding = d.bool(forKey: K.onboarded)
+        showInDock = d.bool(forKey: K.dock)
         // Padrão: cinza discreto. O usuário pode deixar vivo.
         ghostR = d.object(forKey: K.r) as? Double ?? 0.50
         ghostG = d.object(forKey: K.g) as? Double ?? 0.50
@@ -98,7 +105,8 @@ final class SombraSettings: ObservableObject {
         ghostA = d.object(forKey: K.a) as? Double ?? 0.60
     }
 
-    static let menuIconChoices = ["👻", "✍️", "💬", "⌨️", "✨", "🪄", "📝", "🤖"]
+    // Emojis + ícones de imagem ("@black"/"@white", carregados do bundle).
+    static let menuIconChoices = ["👻", "✍️", "💬", "⌨️", "✨", "🪄", "📝", "🤖", "@black", "@white"]
 
     /// Prompts prontos para o usuário adicionar com um clique (localizados).
     static var presetPrompts: [String] {

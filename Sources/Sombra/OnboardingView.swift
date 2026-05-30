@@ -115,6 +115,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory) // volta a ser só barra de menu
+        // Volta para a política preferida (Dock só se o usuário ativou).
+        NSApp.setActivationPolicy(SombraSettings.shared.showInDock ? .regular : .accessory)
     }
 }

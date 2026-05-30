@@ -241,17 +241,41 @@ struct SettingsView: View {
             Divider()
             Text(L.t("Menu bar icon", "Ícone na barra de menu")).font(.headline)
             HStack(spacing: 6) {
-                ForEach(SombraSettings.menuIconChoices, id: \.self) { emoji in
-                    Button(emoji) { settings.menuIcon = emoji }
-                        .font(.title2)
-                        .padding(6)
-                        .background(RoundedRectangle(cornerRadius: 6)
-                            .fill(settings.menuIcon == emoji ? Color.accentColor.opacity(0.25) : Color.clear))
-                        .buttonStyle(.plain)
-                }
+                ForEach(SombraSettings.menuIconChoices, id: \.self) { iconButton($0) }
             }
+
+            Toggle(L.t("Show in Dock", "Mostrar no Dock"), isOn: $settings.showInDock)
+            Text(L.t("By default Sombra lives only in the menu bar.",
+                     "Por padrão a Sombra fica só na barra de menu."))
+                .font(.caption).foregroundStyle(.secondary)
             Spacer()
         }
+    }
+
+    @ViewBuilder
+    private func iconButton(_ choice: String) -> some View {
+        let selected = settings.menuIcon == choice
+        let isImage = choice.hasPrefix("@")
+        Button { settings.menuIcon = choice } label: {
+            Group {
+                if isImage, let img = Self.menuIconImage(choice) {
+                    Image(nsImage: img).resizable().frame(width: 20, height: 20)
+                } else {
+                    Text(choice).font(.title2)
+                }
+            }
+            .padding(6)
+            .background(RoundedRectangle(cornerRadius: 6)
+                .fill(selected ? Color.accentColor.opacity(0.3)
+                               : (isImage ? Color(white: 0.5).opacity(0.4) : Color.clear)))
+        }
+        .buttonStyle(.plain)
+    }
+
+    static func menuIconImage(_ choice: String) -> NSImage? {
+        let name = choice == "@black" ? "menu-black" : "menu-white"
+        guard let url = Bundle.main.url(forResource: name, withExtension: "png") else { return nil }
+        return NSImage(contentsOf: url)
     }
 
     // MARK: - Escrita

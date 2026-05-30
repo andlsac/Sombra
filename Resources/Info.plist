@@ -9,19 +9,20 @@
     <key>CFBundleIdentifier</key>
     <string>com.sombra.autocomplete</string>
     <key>CFBundleVersion</key>
-    <string>0.1.0</string>
+    <string>0.2.1</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>0.2.1</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>
     <string>Sombra</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
-    <!-- App de menu bar: sem ícone no Dock. -->
+    <!-- App de menu bar por padrão (sem Dock). O usuário pode ativar o Dock
+         nas Preferências (setActivationPolicy em runtime). -->
     <key>LSUIElement</key>
     <true/>
-    <key>NSScreenCaptureUsageDescription</key>
-    <string>A Sombra lê o conteúdo visível da tela para gerar sugestões de texto contextuais localmente.</string>
 </dict>
 </plist>
