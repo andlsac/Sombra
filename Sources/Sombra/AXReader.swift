@@ -19,6 +19,19 @@ struct FocusedText {
 enum AXReader {
     private static let systemWide = AXUIElementCreateSystemWide()
     private static let windowChars = 800
+    private static var electronEnabledPids = Set<pid_t>()
+
+    /// Liga a árvore de acessibilidade de apps Chromium/Electron (Claude, VS Code,
+    /// Slack…), que por padrão não expõem o texto, setando `AXManualAccessibility`
+    /// no app. Feito uma vez por app; em apps nativos é um no-op inofensivo.
+    static func enableElectronAX(_ element: AXUIElement) {
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(element, &pid) == .success, pid > 0 else { return }
+        if electronEnabledPids.contains(pid) { return }
+        electronEnabledPids.insert(pid)
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+    }
 
     static func focusedTextField() -> AXUIElement? {
         var focused: CFTypeRef?
@@ -31,7 +44,13 @@ enum AXReader {
 
     static func read() -> FocusedText? {
         guard let element = focusedTextField() else { return nil }
-        guard let caret = selectedCaret(element) else { return nil }
+        guard let caret = selectedCaret(element) else {
+            // Campo focado existe mas não expõe a posição do cursor: típico de
+            // apps Chromium/Electron (Claude, VS Code, Slack…). Liga a árvore
+            // de acessibilidade deles; os próximos ticks já devem conseguir ler.
+            enableElectronAX(element)
+            return nil
+        }
 
         var length = numberOfCharacters(element) ?? -1
         var prefix: String?
@@ -60,7 +79,7 @@ enum AXReader {
                 }
             }
         }
-        guard let pfx = prefix else { return nil }
+        guard let pfx = prefix else { enableElectronAX(element); return nil }
 
         // Caractere após o cursor (para detectar fronteira de palavra).
         if nextChar == nil, length >= 0, caret < length,
