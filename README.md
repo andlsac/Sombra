@@ -12,7 +12,8 @@
 
 Sombra predicts the continuation of what you're typing and shows it in a **bubble
 in front of the cursor** — press **Tab** to accept. It also fixes the spelling of
-the last word. Inspired by other apps of the genre.
+the last word. Inspired by other apps of the genre, such as
+[Cotabby](https://github.com/FuJacob/cotabby).
 
 > **This is a personal project.** Anyone is free to use the app and the code. It
 > was built for the **author's own everyday use** — not for general/production
@@ -83,8 +84,9 @@ downloaded by the user.
 ## Português
 
 Autocomplete + correção ortográfica com **IA local** para macOS, inspirado em
-outros aplicativos do gênero. Lê o texto que você digita, prevê a continuação e
-mostra num **bubble** à frente do cursor. Você aceita apertando **Tab**.
+outros aplicativos do gênero, como o [Cotabby](https://github.com/FuJacob/cotabby).
+Lê o texto que você digita, prevê a continuação e mostra num **bubble** à frente
+do cursor. Você aceita apertando **Tab**.
 
 - 100% local e privado — Apple Silicon + **llama.cpp / Metal**
 - Roda na **barra de menu** (sem ícone no Dock)
