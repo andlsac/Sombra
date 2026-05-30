@@ -21,3 +21,6 @@
 
 # Pasta de trabalho de imagens (a versão limpa fica em assets/)
 prints e imagens/
+
+# Estado pessoal do Xcode (UI, schemes) — muda a cada abertura
+xcuserdata/
