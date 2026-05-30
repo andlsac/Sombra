@@ -31,6 +31,11 @@ final class SombraSettings: ObservableObject {
     // Remover ponto final das sugestões (muitas vezes inútil).
     @Published var removeTrailingPeriod: Bool { didSet { d.set(removeTrailingPeriod, forKey: K.trimDot) } }
 
+    // Personalização: aprender com a escrita do usuário e favorecer seus termos.
+    @Published var personalizeEnabled: Bool { didSet { d.set(personalizeEnabled, forKey: K.persOn) } }
+    @Published var personalizeStrength: Double { didSet { d.set(personalizeStrength, forKey: K.persStr) } } // 0...1
+    @Published var storeAllInputs: Bool { didSet { d.set(storeAllInputs, forKey: K.persAll) } }
+
     // Emoji do ícone na barra de menu.
     @Published var menuIcon: String {
         didSet {
@@ -49,6 +54,7 @@ final class SombraSettings: ObservableObject {
         static let prompts = "customPrompts", modelPath = "modelPath"
         static let words = "suggestionWords", icon = "menuIcon", trimDot = "removeTrailingPeriod"
         static let blocked = "blockedApps", appPrompts = "appPrompts", appNames = "appNames"
+        static let persOn = "personalizeEnabled", persStr = "personalizeStrength", persAll = "storeAllInputs"
         static let r = "ghostR", g = "ghostG", b = "ghostB", a = "ghostA"
     }
 
@@ -63,6 +69,9 @@ final class SombraSettings: ObservableObject {
         suggestionWords = min(max(w, 1), 10)
         menuIcon = d.string(forKey: K.icon) ?? "👻"
         removeTrailingPeriod = d.object(forKey: K.trimDot) as? Bool ?? true
+        personalizeEnabled = d.object(forKey: K.persOn) as? Bool ?? false
+        personalizeStrength = d.object(forKey: K.persStr) as? Double ?? 0.4
+        storeAllInputs = d.object(forKey: K.persAll) as? Bool ?? false
         // Padrão: cinza discreto. O usuário pode deixar vivo.
         ghostR = d.object(forKey: K.r) as? Double ?? 0.50
         ghostG = d.object(forKey: K.g) as? Double ?? 0.50

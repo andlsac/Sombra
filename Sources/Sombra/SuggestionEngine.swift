@@ -147,6 +147,47 @@ final class SuggestionEngine {
         if !on { dismissGhost() }
     }
 
+    // MARK: - Personalização (aprende com a sua escrita)
+
+    private var profilePrefix = ""        // âncora p/ registrar palavras digitadas
+    private var lastBiasKey = ""          // evita reconstruir o viés à toa
+    private var lastBiasBuild = Date.distantPast
+
+    /// Reconstrói o viés (logit bias) se preferências/perfil mudaram (throttled).
+    private func refreshBiasIfNeeded() {
+        let s = SombraSettings.shared
+        guard s.personalizeEnabled else {
+            if !lastBiasKey.isEmpty { predictor.setBias(words: [], strength: 0); lastBiasKey = "" }
+            return
+        }
+        let strength = Float(min(max(s.personalizeStrength, 0), 1)) * 5.0 // 0..5 logits
+        let words = WritingProfile.shared.topWords()
+        let key = "\(String(format: "%.2f", strength))|\(words.count)"
+        if key == lastBiasKey { return }
+        if !lastBiasKey.isEmpty && Date().timeIntervalSince(lastBiasBuild) < 4 { return }
+        predictor.setBias(words: words, strength: strength)
+        lastBiasKey = key
+        lastBiasBuild = Date()
+    }
+
+    /// Registra palavras digitadas (modo "guardar tudo"), avançando no texto.
+    private func recordWritingIfEnabled(_ prefix: String) {
+        let s = SombraSettings.shared
+        guard s.personalizeEnabled, s.storeAllInputs else { return }
+        // Âncora = prefixo sem a palavra parcial final (que ainda está sendo digitada).
+        var anchor = prefix
+        if prefix.last?.isLetter == true,
+           let r = prefix.range(of: "[\\p{L}']+$", options: .regularExpression) {
+            anchor = String(prefix[..<r.lowerBound])
+        }
+        if anchor.hasPrefix(profilePrefix) && anchor.count > profilePrefix.count {
+            WritingProfile.shared.record(String(anchor.dropFirst(profilePrefix.count)))
+            profilePrefix = anchor
+        } else if !prefix.hasPrefix(profilePrefix) {
+            profilePrefix = anchor // divergiu (editou / trocou de campo): re-ancora
+        }
+    }
+
     // MARK: - Loop principal
 
     private func tick(forced: Bool = false) {
@@ -166,6 +207,9 @@ final class SuggestionEngine {
 
         // App bloqueado pelo usuário (ex.: gerenciador de senhas): não sugere.
         if SombraSettings.shared.isBlocked(focus.appBundleId) { dismissGhost(); return }
+
+        // Personalização (modo "guardar tudo"): aprende com o que você digita.
+        recordWritingIfEnabled(focus.prefix)
 
         // Sugere quando o cursor está numa FRONTEIRA de palavra: fim do texto,
         // ou o caractere seguinte não é letra/dígito (espaço, pontuação, quebra).
@@ -200,6 +244,7 @@ final class SuggestionEngine {
 
     private func requestPrediction(prefix: String) {
         inFlight?.cancel()
+        refreshBiasIfNeeded()
         // Contexto: prompts gerais + prompts específicos do app atual.
         let context = SombraSettings.shared.effectiveContext(forApp: lastBundleId)
         inFlight = Task { [weak self] in
@@ -260,6 +305,12 @@ final class SuggestionEngine {
         TextInjector.insert(word)
         lastPrefix += word
         currentSuffix = rest
+
+        // Personalização: a palavra que você ACEITOU é um sinal forte de preferência.
+        if SombraSettings.shared.personalizeEnabled,
+           !SombraSettings.shared.isBlocked(lastBundleId) {
+            WritingProfile.shared.record(word)
+        }
 
         if rest.isEmpty {
             currentSuffix = ""

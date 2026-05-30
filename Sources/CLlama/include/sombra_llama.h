@@ -30,6 +30,11 @@ int sombra_complete(sombra_ctx * c,
                     int max_words,
                     bool stop_on_newline);
 
+// Personalização: favorece (logit bias) os tokens iniciais das palavras dadas
+// (separadas por '\n'). `strength` é o bônus em logits (0 = desliga).
+// Reconstrói o sampler interno. Passar NULL/0 remove o viés.
+void sombra_set_bias(sombra_ctx * c, const char * words_nl, float strength);
+
 #ifdef __cplusplus
 }
 #endif

@@ -7,6 +7,15 @@ protocol Predictor: AnyObject {
     /// do app atual), retorna o sufixo previsto, ou nil.
     /// Deve ser cancelável e rodar fora do main thread.
     func predict(prefix: String, promptContext: String) async -> String?
+
+    /// Personalização: favorece as palavras dadas com um bônus em logits.
+    /// `strength` <= 0 ou lista vazia remove o viés.
+    func setBias(words: [String], strength: Float)
+}
+
+extension Predictor {
+    // Padrão: sem personalização (ex.: HeuristicPredictor).
+    func setBias(words: [String], strength: Float) {}
 }
 
 /// Placeholder determinístico para validar o loop ponta-a-ponta.

@@ -52,6 +52,8 @@ the last word. Inspired by other apps of the genre, such as
 - **Per-app rules** — block apps (e.g. password managers) and set **per-app
   prompts** (email, browser, messaging…).
 - Configurable: suggestion length, bubble color/opacity, menu-bar icon.
+- **Optional personalization** — learns the words you use (stored locally) and
+  gently favors them in suggestions, via a tunable "favor my words" dial.
 - **Bilingual UI** (English / Portuguese) that follows your system language.
 - **8-model catalog** to download (SmolLM2, Qwen2.5, Gemma 3, Llama 3.2 — up to
   ~2 GB), or import any `.gguf`.
@@ -128,6 +130,8 @@ do cursor. Você aceita apertando **Tab**.
   o **Tab** substitui. Sem custo do modelo (instantâneo).
 - **Edição no meio do texto** — sugere em qualquer fronteira de palavra.
 - **Bubble** à frente do cursor (com fallback abaixo do campo; nunca sai da tela).
+- **Personalização opcional** — aprende as palavras que você usa (guardadas
+  localmente) e as favorece nas sugestões, com um controle de intensidade.
 
 ### Preferências (👻 na barra de menu → "Preferências…", ⌘,)
 

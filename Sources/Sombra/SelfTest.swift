@@ -22,6 +22,14 @@ enum SelfTest {
             exit(3)
         }
 
+        // Teste de personalização: SOMBRA_BIAS="palavra1,palavra2" força o viés.
+        if let biasEnv = ProcessInfo.processInfo.environment["SOMBRA_BIAS"], !biasEnv.isEmpty {
+            let words = biasEnv.split(separator: ",").map { String($0) }
+            let strength = Float(ProcessInfo.processInfo.environment["SOMBRA_BIAS_STRENGTH"] ?? "4") ?? 4
+            predictor.setBias(words: words, strength: strength)
+            print("[selftest] BIAS aplicado: \(words) força=\(strength)")
+        }
+
         // Roda algumas vezes: a 1ª inclui warmup (pipelines Metal); as
         // seguintes refletem a latência "quente" real por tecla.
         var last: String?

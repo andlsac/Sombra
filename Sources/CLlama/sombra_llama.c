@@ -52,6 +52,53 @@ sombra_ctx * sombra_load(const char * model_path, int n_ctx, int n_gpu_layers) {
     return c;
 }
 
+void sombra_set_bias(sombra_ctx * c, const char * words_nl, float strength) {
+    if (!c) return;
+    if (c->sampler) { llama_sampler_free(c->sampler); c->sampler = NULL; }
+
+    struct llama_sampler_chain_params sp = llama_sampler_chain_default_params();
+    struct llama_sampler * chain = llama_sampler_chain_init(sp);
+
+    if (words_nl && strength > 0.0f) {
+        const int n_vocab = llama_vocab_n_tokens(c->vocab);
+        llama_logit_bias biases[256];
+        int nb = 0;
+        const char * p = words_nl;
+        char word[256];
+        while (*p && nb < 256) {
+            int wl = 0;
+            while (*p && *p != '\n' && wl < 200) { word[wl++] = *p; p++; }
+            while (*p && *p != '\n') p++;       // descarta excesso
+            if (*p == '\n') p++;
+            if (wl < 2) continue;
+
+            // Tokeniza " palavra" para pegar o token de início de palavra.
+            char buf[260];
+            buf[0] = ' ';
+            memcpy(buf + 1, word, (size_t)wl);
+            llama_token toks[8];
+            int nt = llama_tokenize(c->vocab, buf, wl + 1, toks, 8,
+                                    /*add_special=*/false, /*parse_special=*/false);
+            if (nt <= 0) continue;
+            llama_token t = toks[0];
+            if (t < 0 || t >= n_vocab) continue;
+
+            int dup = 0;
+            for (int j = 0; j < nb; j++) if (biases[j].token == t) { dup = 1; break; }
+            if (dup) continue;
+            biases[nb].token = t;
+            biases[nb].bias = strength;
+            nb++;
+        }
+        if (nb > 0) {
+            llama_sampler_chain_add(chain, llama_sampler_init_logit_bias(n_vocab, nb, biases));
+        }
+    }
+
+    llama_sampler_chain_add(chain, llama_sampler_init_greedy());
+    c->sampler = chain;
+}
+
 void sombra_free(sombra_ctx * c) {
     if (!c) return;
     if (c->cached_tokens) free(c->cached_tokens);

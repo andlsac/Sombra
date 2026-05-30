@@ -231,6 +231,9 @@ struct SettingsView: View {
                 }) { preset in
                     settings.customPrompts.append(preset)
                 }
+
+                Divider()
+                learningSection
             }
         }
     }
@@ -240,6 +243,48 @@ struct SettingsView: View {
         guard !t.isEmpty, !settings.customPrompts.contains(t) else { newPrompt = ""; return }
         settings.customPrompts.append(t)
         newPrompt = ""
+    }
+
+    // Personalização: aprende com a sua escrita e favorece seus termos.
+    private var learningSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(L.t("Learn from my writing", "Aprender com a minha escrita")).font(.headline)
+            Text(L.t("Sombra keeps a local list of the words you use and gently favors them in suggestions. It stays on your Mac.",
+                     "A Sombra mantém uma lista local das palavras que você usa e as favorece nas sugestões. Fica só no seu Mac."))
+                .font(.caption).foregroundStyle(.secondary)
+
+            Toggle(L.t("Enable personalization", "Ativar personalização"), isOn: $settings.personalizeEnabled)
+
+            if settings.personalizeEnabled {
+                VStack(alignment: .leading) {
+                    Text(L.t("Favor my words: \(Int(settings.personalizeStrength * 100))%",
+                             "Favorecer minhas palavras: \(Int(settings.personalizeStrength * 100))%"))
+                    HStack {
+                        Text("Off").font(.caption2).foregroundStyle(.secondary)
+                        Slider(value: $settings.personalizeStrength, in: 0...1)
+                        Text("Max").font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                Text(L.t("Subtle at low values; too high may occasionally suggest a less fitting word.",
+                         "Sutil em valores baixos; muito alto pode às vezes sugerir uma palavra menos adequada."))
+                    .font(.caption).foregroundStyle(.secondary)
+
+                Toggle(L.t("Also learn from everything I type (not only accepted suggestions)",
+                           "Aprender também com tudo que eu digito (não só sugestões aceitas)"),
+                       isOn: $settings.storeAllInputs)
+
+                HStack {
+                    Text(L.t("\(WritingProfile.shared.wordCount) words learned",
+                             "\(WritingProfile.shared.wordCount) palavras aprendidas"))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button(L.t("Clear learned data", "Limpar dados aprendidos")) {
+                        WritingProfile.shared.clear()
+                    }
+                    .foregroundStyle(.red)
+                }
+            }
+        }
     }
 
     // MARK: - Apps (bloqueio + prompts por app)

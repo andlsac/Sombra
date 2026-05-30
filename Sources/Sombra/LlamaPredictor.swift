@@ -35,6 +35,17 @@ final class LlamaPredictor: Predictor {
 
     deinit { sombra_free(ctx) }
 
+    func setBias(words: [String], strength: Float) {
+        let joined = words.joined(separator: "\n")
+        queue.async { [handle] in
+            if joined.isEmpty || strength <= 0 {
+                sombra_set_bias(handle.ctx, nil, 0)
+            } else {
+                sombra_set_bias(handle.ctx, joined, strength)
+            }
+        }
+    }
+
     func predict(prefix: String, promptContext: String) async -> String? {
         let prompt = buildPrompt(prefix: prefix, context: promptContext)
         let words = Int32(min(max(SombraSettings.shared.suggestionWords, 1), 10))
