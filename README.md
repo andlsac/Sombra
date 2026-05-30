@@ -3,6 +3,15 @@
 **Local-AI autocomplete + spell-correction for macOS.** Runs 100% on your Mac
 (Apple Silicon, `llama.cpp` + Metal), lives in the menu bar, accept with **Tab**.
 
+<p align="center">
+  <img src="assets/demo.gif" alt="Sombra autocomplete in action" width="680"><br>
+  <em>Type → a suggestion appears in front of the cursor → press Tab to accept.</em>
+</p>
+
+<p align="center">
+  <img src="assets/preferences.jpg" alt="Sombra — Preferences / model picker" width="430">
+</p>
+
 🇬🇧 [English](#english) · 🇧🇷 [Português](#português)
 
 ---
