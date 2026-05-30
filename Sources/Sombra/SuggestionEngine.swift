@@ -94,8 +94,6 @@ final class SuggestionEngine {
         let s = SombraSettings.shared
         keyTap.acceptKeyCode = CGKeyCode(s.acceptKeyCode)
         keyTap.acceptModifiers = s.acceptModifiers
-        keyTap.acceptAllKeyCode = CGKeyCode(s.acceptAllKeyCode)
-        keyTap.acceptAllModifiers = s.acceptAllModifiers
     }
 
     func start() {
@@ -114,15 +112,6 @@ final class SuggestionEngine {
             if consume, let self {
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated { _ = self.acceptIfPossible() }
-                }
-            }
-            return consume
-        }
-        keyTap.onAcceptAll = { [weak self] in
-            let consume = flag.withLock { $0 }
-            if consume, let self {
-                DispatchQueue.main.async {
-                    MainActor.assumeIsolated { _ = self.acceptAllIfPossible() }
                 }
             }
             return consume
@@ -350,36 +339,6 @@ final class SuggestionEngine {
                 self.overlay.show(suffix: self.currentSuffix, caretRect: self.lastCaretRect,
                                   elementRect: self.lastElementRect)
             }
-        }
-        return true
-    }
-
-    /// Aceita a sugestão INTEIRA de uma vez (na correção, substitui a palavra).
-    private func acceptAllIfPossible() -> Bool {
-        guard enabled, !currentSuffix.isEmpty else { return false }
-
-        if mode == .correction, let fix = correction {
-            suppressUntil = Date().addingTimeInterval(0.2)
-            overlay.hide()
-            TextInjector.deleteBackward(count: fix.wrong.count)
-            TextInjector.insert(fix.right)
-            lastPrefix = String(lastPrefix.dropLast(fix.wrong.count)) + fix.right
-            currentSuffix = ""
-            correction = nil
-            mode = .autocomplete
-            return true
-        }
-
-        // Autocomplete: insere TODO o sufixo de uma vez.
-        let all = currentSuffix
-        suppressUntil = Date().addingTimeInterval(0.18)
-        overlay.hide()
-        TextInjector.insert(all)
-        lastPrefix += all
-        currentSuffix = ""
-        if SombraSettings.shared.personalizeEnabled,
-           !SombraSettings.shared.isBlocked(lastBundleId) {
-            WritingProfile.shared.record(all)
         }
         return true
     }
