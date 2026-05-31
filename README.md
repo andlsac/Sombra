@@ -11,12 +11,14 @@
 </p>
 
 <p align="center">
-  <img src="assets/preferences.jpg" alt="Sombra — Preferences / model picker" width="430">
+  <img src="assets/preferences.jpg" alt="Sombra — model picker (glossy Frutiger Aero theme)" width="640"><br>
+  <em>Pick &amp; download a model — glossy “Frutiger Aero” theme (translucent glass, vivid colors).</em>
 </p>
 
 <p align="center">
-  <img src="assets/learning.jpg" alt="Sombra learning from your writing (personalization)" width="640"><br>
-  <em>Optional personalization: Sombra learns the words you use and favors them.</em>
+  <img src="assets/behavior.jpg" alt="Sombra — Behavior settings" width="320">
+  &nbsp;
+  <img src="assets/appearance.jpg" alt="Sombra — Appearance settings" width="320">
 </p>
 
  [English](#english) · [Português](#português)
