@@ -176,7 +176,9 @@ final class SuggestionEngine {
         }
         let strength = Float(min(max(s.personalizeStrength, 0), 1)) * 5.0 // 0..5 logits
         let words = WritingProfile.shared.topWords()
-        let key = "\(String(format: "%.2f", strength))|\(words.count)"
+        // Inclui uma assinatura do CONTEÚDO: antes a key era só força+contagem,
+        // então trocar palavras (mesma contagem) não recarregava o viés.
+        let key = "\(String(format: "%.2f", strength))|\(words.count)|\(words.joined(separator: ",").hashValue)"
         if key == lastBiasKey { return }
         if !lastBiasKey.isEmpty && Date().timeIntervalSince(lastBiasBuild) < 4 { return }
         predictor.setBias(words: words, strength: strength)
@@ -199,6 +201,7 @@ final class SuggestionEngine {
             profilePrefix = anchor
         } else if !prefix.hasPrefix(profilePrefix) {
             profilePrefix = anchor // divergiu (editou / trocou de campo): re-ancora
+            WritingProfile.shared.resetSequence()
         }
     }
 
@@ -253,11 +256,41 @@ final class SuggestionEngine {
         // Não sugerir no meio de uma palavra recém-iniciada muito curta.
         guard prefix.count >= 2 else { dismissGhost(); return }
 
-        requestPrediction(prefix: prefix)
+        // Comprimento da palavra parcial no fim do prefixo (0 = cursor numa
+        // fronteira: o texto antes dele termina em espaço/pontuação).
+        let partialWordLen = prefix.reversed().prefix { $0.isLetter || $0.isNumber }.count
+        if partialWordLen == 0 {
+            // Fronteira: sugere as PRÓXIMAS palavras. Também aprende o par
+            // "palavra anterior → palavra recém-terminada".
+            let s = SombraSettings.shared
+            if s.personalizeEnabled, s.storeAllInputs, !s.isBlocked(lastBundleId) {
+                WritingProfile.shared.observe(prefix: prefix)
+            }
+            requestPrediction(prefix: prefix)
+        } else if partialWordLen >= 2 {
+            // Meio de uma palavra (≥2 letras): completa a palavra atual (e segue).
+            requestPrediction(prefix: prefix)
+        } else {
+            // Palavra recém-iniciada (1 letra): cedo demais para sugerir.
+            dismissGhost()
+        }
     }
 
     private func requestPrediction(prefix: String) {
         inFlight?.cancel()
+
+        // Memória de frases: se VOCÊ costuma seguir esta palavra por outra (padrão
+        // forte e dominante), oferece a SUA continuação direto — sem o modelo.
+        if SombraSettings.shared.personalizeEnabled,
+           !SombraSettings.shared.isBlocked(lastBundleId),
+           let learned = WritingProfile.shared.learnedNextWord(for: prefix) {
+            mode = .autocomplete
+            correction = nil
+            currentSuffix = learned
+            overlay.show(suffix: learned, caretRect: lastCaretRect, elementRect: lastElementRect)
+            return
+        }
+
         refreshBiasIfNeeded()
         // Contexto: prompts gerais + prompts específicos do app atual.
         let context = SombraSettings.shared.effectiveContext(forApp: lastBundleId)
@@ -268,25 +301,41 @@ final class SuggestionEngine {
             await MainActor.run {
                 // Só aplica se o prefixo ainda é o atual.
                 guard self.lastPrefix == prefix else { return }
-                if let suffix, !suffix.isEmpty {
-                    // Autocomplete (continuação).
-                    self.mode = .autocomplete
-                    self.correction = nil
-                    self.currentSuffix = suffix
-                    self.overlay.show(suffix: suffix, caretRect: self.lastCaretRect,
-                                      elementRect: self.lastElementRect)
-                } else if let fix = self.spellCorrectionForLastWord(in: prefix) {
-                    // Sem autocomplete: oferece correção da última palavra.
-                    self.mode = .correction
-                    self.correction = fix
-                    self.currentSuffix = fix.right
-                    self.overlay.show(suffix: fix.right, caretRect: self.lastCaretRect,
-                                      elementRect: self.lastElementRect, isCorrection: true)
+
+                // Estamos no meio/fim de uma palavra ainda sem espaço?
+                let endsLetter = prefix.last.map { $0.isLetter || $0.isNumber } ?? false
+                // O modelo está CONTINUANDO essa mesma palavra (sufixo sem espaço
+                // inicial)? Se sim, a palavra está incompleta — completa, não corrige.
+                let continuesWord = endsLetter && (suffix?.first.map { $0 != " " } ?? false)
+
+                if let suffix, !suffix.isEmpty, continuesWord {
+                    self.showAutocomplete(suffix)
+                } else if endsLetter, let fix = self.spellCorrectionForLastWord(in: prefix) {
+                    // O modelo iniciou outra palavra (ou não sugeriu): a palavra
+                    // recém-digitada parece "fechada". Se estiver errada, corrige.
+                    self.showCorrection(fix)
+                } else if let suffix, !suffix.isEmpty {
+                    self.showAutocomplete(suffix) // continuação normal (próxima palavra)
                 } else {
                     self.dismissGhost()
                 }
             }
         }
+    }
+
+    private func showAutocomplete(_ suffix: String) {
+        mode = .autocomplete
+        correction = nil
+        currentSuffix = suffix
+        overlay.show(suffix: suffix, caretRect: lastCaretRect, elementRect: lastElementRect)
+    }
+
+    private func showCorrection(_ fix: (wrong: String, right: String)) {
+        mode = .correction
+        correction = fix
+        currentSuffix = fix.right
+        overlay.show(suffix: fix.right, caretRect: lastCaretRect,
+                     elementRect: lastElementRect, isCorrection: true)
     }
 
     // MARK: - Aceitar / descartar

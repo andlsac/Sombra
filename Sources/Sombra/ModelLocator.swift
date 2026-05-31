@@ -3,7 +3,7 @@ import Foundation
 /// Descobre onde está o arquivo .gguf do modelo.
 /// Ordem: variável de ambiente → dentro do .app → pasta models/ do projeto.
 enum ModelLocator {
-    static let fileName = "SmolLM2-360M-Instruct-Q8_0.gguf"
+    static let fileName = "Qwen2.5-0.5B.Q8_0.gguf"
 
     static func find() -> String? {
         let fm = FileManager.default

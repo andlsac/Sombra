@@ -52,6 +52,11 @@ enum AXReader {
             return nil
         }
 
+        // Só sugere em campos de TEXTO EDITÁVEIS. Evita disparar em barra de
+        // URL, caixas de busca, rótulos (AXStaticText) e elementos quaisquer
+        // de páginas web — causa comum de "sugere em qualquer lugar" no navegador.
+        guard isEditableTextElement(element) else { return nil }
+
         var length = numberOfCharacters(element) ?? -1
         var prefix: String?
         var nextChar: Character?
@@ -97,6 +102,29 @@ enum AXReader {
             elementRect: elementRect(for: element),
             appBundleId: bundleId(for: element)
         )
+    }
+
+    /// true se o elemento focado é um campo de texto onde faz sentido sugerir.
+    /// Aceita os papéis editáveis (TextField, TextArea, ComboBox) e rejeita
+    /// campos de busca e de senha (subrole), que não devem receber autocomplete.
+    private static func isEditableTextElement(_ element: AXUIElement) -> Bool {
+        let role = stringAttr(element, kAXRoleAttribute)
+        let subrole = stringAttr(element, kAXSubroleAttribute)
+
+        // Nunca em campos de busca ou senha.
+        if subrole == kAXSearchFieldSubrole || subrole == kAXSecureTextFieldSubrole {
+            return false
+        }
+        switch role {
+        case kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole: return true
+        default: return false
+        }
+    }
+
+    private static func stringAttr(_ element: AXUIElement, _ attr: String) -> String? {
+        var v: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attr as CFString, &v) == .success else { return nil }
+        return v as? String
     }
 
     /// Bundle id do app que possui o elemento focado.

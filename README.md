@@ -54,8 +54,10 @@ the last word. Inspired by other apps of the genre, such as
 
 - **Word-by-word autocomplete** — each **Tab** inserts only the next word.
 - **Spell correction** of the last word (native macOS spell-checker, multilingual)
-  — shown in **orange**; Tab replaces the misspelled word.
-- **Mid-text editing** suggests at any word boundary, not just at the line end.
+  — shown in **orange**; Tab replaces it. Also fixes **missing accents**
+  (e.g. *voce → você*) that macOS treats as “correct”, without touching valid words.
+- **Mid-text editing** — completes the word you're typing and suggests the next
+  ones at word boundaries, not just at the line end.
 - **Per-app rules** — block apps (e.g. password managers) and set **per-app
   prompts** (email, browser, messaging…).
 - **Works in most apps**, including Electron/Chromium ones (Claude, VS Code,
@@ -65,8 +67,10 @@ the last word. Inspired by other apps of the genre, such as
 - **Optional personalization** — learns the words you use (stored locally) and
   gently favors them in suggestions, via a tunable "favor my words" dial.
 - **Bilingual UI** (English / Portuguese) that follows your system language.
-- **9-model catalog** to download (SmolLM2, Qwen2.5, Qwen3, Gemma 3, Llama 3.2 —
-  up to ~2 GB), or import any `.gguf`.
+- **5 curated base models** to download (SmolLM2 & Qwen2.5, ~140 MB to ~1.8 GB),
+  or import any `.gguf`. These are **base (completion) models** — they *continue*
+  your text instead of “answering” like a chatbot, which is what makes the
+  autocomplete feel natural.
 - **First-launch intro** that walks you through setup in a few steps.
 
 ### Requirements
@@ -78,7 +82,7 @@ the last word. Inspired by other apps of the genre, such as
 
 ```bash
 ./scripts/build_llama.sh      # build llama.cpp (libs + Metal), ~2-4 min
-./scripts/download_model.sh   # download the base model (~369 MB)
+./scripts/download_model.sh   # download the base model (Qwen2.5-0.5B, ~506 MB)
 ./scripts/bundle.sh release   # build & package Sombra.app (model embedded)
 open ./build/Sombra.app
 ```
@@ -136,17 +140,21 @@ do cursor. Você aceita apertando **Tab**.
 ### Recursos
 
 - **Autocomplete palavra-por-palavra** — cada **Tab** insere só a próxima palavra.
-- **Correção ortográfica** (NSSpellChecker, multilíngue) — quando não há
-  autocomplete e a última palavra está errada, mostra a correção em **laranja**;
-  o **Tab** substitui. Sem custo do modelo (instantâneo).
-- **Edição no meio do texto**  sugere em qualquer fronteira de palavra.
+- **Correção ortográfica** (NSSpellChecker, multilíngue) — mostra a correção da
+  última palavra em **laranja**; o **Tab** substitui. Também pega **falta de
+  acento** (ex.: *voce → você*) que o macOS considera “correta”, sem mexer em
+  palavras válidas. Sem custo do modelo (instantâneo).
+- **Edição no meio do texto** — completa a palavra que você está digitando e
+  sugere as próximas nas fronteiras de palavra.
 - **Bubble** à frente do cursor (com fallback abaixo do campo; nunca sai da tela).
 - **Funciona na maioria dos apps**, incluindo Electron/Chromium (Claude, VS Code,
   Slack…) — liga a árvore de acessibilidade deles sob demanda.
 - **Personalização opcional** — aprende as palavras que você usa (guardadas
   localmente) e as favorece nas sugestões, com um controle de intensidade.
 - **Atalho configurável**, até **15 palavras** por sugestão, e **introdução** na
-  primeira abertura. Catálogo de **9 modelos** (inclui o Qwen3-1.7B).
+  primeira abertura. Catálogo de **5 modelos base** (SmolLM2 e Qwen2.5), que
+  *continuam* o seu texto em vez de “responder” como chatbot — o que dá o
+  autocomplete mais natural.
 
 ### Preferências (👻 na barra de menu → "Preferências…", ⌘,)
 
@@ -173,7 +181,7 @@ app em foco.
 
 ```bash
 ./scripts/build_llama.sh      # compila o llama.cpp (libs + Metal), ~2-4 min
-./scripts/download_model.sh   # baixa o modelo base (~369 MB)
+./scripts/download_model.sh   # baixa o modelo base (Qwen2.5-0.5B, ~506 MB)
 ./scripts/bundle.sh release   # compila e empacota o Sombra.app (modelo embutido)
 open ./build/Sombra.app
 ```

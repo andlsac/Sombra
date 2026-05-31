@@ -92,7 +92,7 @@ final class SombraSettings: ObservableObject {
         removeTrailingPeriod = d.object(forKey: K.trimDot) as? Bool ?? true
         personalizeEnabled = d.object(forKey: K.persOn) as? Bool ?? false
         personalizeStrength = d.object(forKey: K.persStr) as? Double ?? 0.4
-        storeAllInputs = d.object(forKey: K.persAll) as? Bool ?? false
+        storeAllInputs = d.object(forKey: K.persAll) as? Bool ?? true
         acceptKeyCode = d.object(forKey: K.akKey) as? Int ?? 48 // 48 = Tab
         acceptModifiers = d.object(forKey: K.akMods) as? Int ?? 0
         acceptKeyLabel = d.string(forKey: K.akLabel) ?? "Tab"

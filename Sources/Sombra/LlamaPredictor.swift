@@ -14,6 +14,9 @@ final class LlamaPredictor: Predictor {
     private var ctx: OpaquePointer { handle.ctx }
     private let queue = DispatchQueue(label: "com.sombra.llama", qos: .userInitiated)
     private let maxPrefixChars = 800
+    /// Modelo instruct/chat (tem template embutido). Tratado via prefill de chat
+    /// para CONTINUAR o texto em vez de "responder" como assistente.
+    private let isInstruct: Bool
 
     /// Falha (retorna nil) se o modelo não puder ser carregado.
     init?(modelPath: String, nCtx: Int32 = 2048) {
@@ -22,7 +25,8 @@ final class LlamaPredictor: Predictor {
             return nil
         }
         self.handle = LlamaHandle(ctx: c)
-        NSLog("[Sombra] Modelo carregado: \(modelPath)")
+        self.isInstruct = sombra_has_chat_template(c)
+        NSLog("[Sombra] Modelo carregado: \(modelPath) (instruct=\(self.isInstruct))")
 
         // Pré-aquece: a 1ª inferência compila os pipelines Metal (~vários seg).
         // Fazemos isso já no carregamento para a 1ª sugestão real ser rápida.
@@ -47,32 +51,103 @@ final class LlamaPredictor: Predictor {
     }
 
     func predict(prefix: String, promptContext: String) async -> String? {
-        let prompt = buildPrompt(prefix: prefix, context: promptContext)
         let words = Int32(min(max(SombraSettings.shared.suggestionWords, 1), 15))
         let maxTokens = words * 8 + 4 // teto de segurança (subpalavras)
+        let trimDot = SombraSettings.shared.removeTrailingPeriod
+        let isInstruct = self.isInstruct
+        let maxPrefix = self.maxPrefixChars
         return await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
             queue.async { [handle] in
+                let prompt = Self.buildPrompt(prefix: prefix, context: promptContext,
+                                              isInstruct: isInstruct, handle: handle,
+                                              maxPrefixChars: maxPrefix)
                 let cap = 512
                 var buf = [CChar](repeating: 0, count: cap)
                 let n = sombra_complete(handle.ctx, prompt, &buf, Int32(cap),
                                         maxTokens, words, true)
                 guard n > 0 else { cont.resume(returning: nil); return }
-                var s = String(cString: buf)
-                if SombraSettings.shared.removeTrailingPeriod {
+                var s = Self.sanitize(String(cString: buf))
+                if trimDot {
                     while let last = s.last, last == "." || last == " " {
                         s.removeLast()
                     }
+                }
+                // Descarta lixo só-símbolos (ex.: '''/***/---), comum em modelos
+                // pequenos. Uma sugestão útil precisa de ao menos uma letra/dígito.
+                guard s.contains(where: { $0.isLetter || $0.isNumber }) else {
+                    cont.resume(returning: nil); return
                 }
                 cont.resume(returning: s.isEmpty ? nil : s)
             }
         }
     }
 
-    /// Continuação direta do texto digitado, com um preâmbulo leve (o contexto
-    /// já vem montado pelo engine — geral + do app atual). Vazio = continuação pura.
-    private func buildPrompt(prefix: String, context: String) -> String {
+    /// Remove markup que modelos pequenos às vezes emitem (tags tipo `<s>`,
+    /// `<u>...</u>`, `<bos>`), resgatando o texto útil em volta. Também colapsa
+    /// espaços/quebras. Não toca em `<` solto sem fechar tag (ex.: "a < b").
+    private static let tagRE = try! NSRegularExpression(pattern: "</?[A-Za-z][A-Za-z0-9]*\\s*/?>")
+    // Marcadores de markdown que modelos pequenos emitem em texto comum.
+    private static let mdRE = try! NSRegularExpression(pattern: "(\\*\\*|__|\\*|`+|~~)")
+    // Marcador de lista/título no INÍCIO (ex.: "- ", "* ", "# ", "> ").
+    private static let leadMarkerRE = try! NSRegularExpression(pattern: "^\\s*([-*#>]+\\s+)+")
+    private static func sanitize(_ raw: String) -> String {
+        // Preserva um espaço INICIAL: ele indica fronteira de palavra (o modelo
+        // está começando uma palavra nova). Removê-lo cola as palavras ao aceitar
+        // ("supermercado"+"comprar"). Só o espaço final/duplicado é descartado.
+        let hadLeadingSpace = raw.first == " "
+        var s = raw
+        for re in [tagRE, mdRE] {
+            s = re.stringByReplacingMatches(in: s, range: NSRange(s.startIndex..., in: s),
+                                            withTemplate: "")
+        }
+        s = leadMarkerRE.stringByReplacingMatches(in: s, range: NSRange(s.startIndex..., in: s),
+                                                  withTemplate: "")
+        s = s.replacingOccurrences(of: "\n", with: " ")
+        while s.contains("  ") { s = s.replacingOccurrences(of: "  ", with: " ") }
+        s = s.trimmingCharacters(in: .whitespaces)
+        if hadLeadingSpace, !s.isEmpty { s = " " + s }
+        return s
+    }
+
+    /// Monta o prompt de geração.
+    /// - Modelo base: continuação crua (contexto + texto), na mesma linha.
+    /// - Modelo instruct: usa o template de chat com PREFILL — instrução no turno
+    ///   `user` e o texto a continuar no turno do assistente, para o modelo
+    ///   CONTINUAR a escrita em vez de virar "assistente" (ex.: "A resposta é…").
+    /// Chamado dentro da `queue` (serializado). Estático: só usa estado imutável,
+    /// evitando capturar `self` (não-Sendable) na closure da fila.
+    private static func buildPrompt(prefix: String, context: String, isInstruct: Bool,
+                                    handle: LlamaHandle, maxPrefixChars: Int) -> String {
         let body = prefix.count <= maxPrefixChars ? prefix : String(prefix.suffix(maxPrefixChars))
-        // Mesma linha (sem \n) para não induzir o modelo a quebrar a frase.
-        return context.isEmpty ? body : context + " " + body
+        let rawFallback = context.isEmpty ? body : context + " " + body
+        guard isInstruct else { return rawFallback }
+
+        // Modo de prompt: SOMBRA_PROMPT_MODE = raw | prefill | user.
+        // Padrão `raw` (continuação crua): nos testes com modelos instruct
+        // pequenos (Gemma-1B) foi o mais confiável — sem EOG→vazio em textos
+        // curtos e sem chatter de assistente ("ok, let's try again"), que o
+        // template de chat (prefill/user) induzia. Modelos BASE usam este caminho
+        // nativamente e dão a melhor qualidade de autocomplete.
+        let mode = ProcessInfo.processInfo.environment["SOMBRA_PROMPT_MODE"] ?? "raw"
+        if mode == "raw" { return rawFallback }
+
+        var instruction = L.t(
+            "You are an inline writing autocomplete. Continue the user's text in the same language. Reply with ONLY the natural continuation — no explanations, no quotes, no lists, and do not repeat the text already written.",
+            "Você é um autocompletar de escrita embutido. Continue o texto do usuário na mesma língua. Responda APENAS com a continuação natural — sem explicações, sem aspas, sem listas e sem repetir o texto já escrito.")
+        if !context.isEmpty { instruction += " " + context }
+
+        if mode == "user" {
+            // Texto vai DENTRO do turno do usuário; assistente gera a continuação.
+            var buf = [CChar](repeating: 0, count: 8192)
+            let full = instruction + "\n\n" + body
+            let n = sombra_build_chat_prefix(handle.ctx, full, &buf, 8192)
+            return n > 0 ? String(cString: buf) : rawFallback
+        }
+
+        // prefill (padrão): instrução no turno user, texto no turno do assistente.
+        var buf = [CChar](repeating: 0, count: 4096)
+        let n = sombra_build_chat_prefix(handle.ctx, instruction, &buf, 4096)
+        guard n > 0 else { return rawFallback }
+        return String(cString: buf) + body
     }
 }

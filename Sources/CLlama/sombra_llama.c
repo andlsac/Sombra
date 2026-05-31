@@ -19,6 +19,26 @@ struct sombra_ctx {
 
 static bool g_backend_ready = false;
 
+// Monta a cadeia de sampling usada na geração. Em todos os casos:
+//   penalties (anti-repetição) -> [logit bias opcional] -> greedy.
+// O greedy fica por último: continuação mais provável (determinística, ideal
+// para autocomplete). As penalidades evitam loops degenerados e lixo repetido
+// (ex.: '''/***/---), que modelos pequenos costumam emitir.
+static struct llama_sampler * build_sampler(const struct llama_vocab * vocab,
+                                            const llama_logit_bias * biases, int nb) {
+    struct llama_sampler_chain_params sp = llama_sampler_chain_default_params();
+    struct llama_sampler * chain = llama_sampler_chain_init(sp);
+    llama_sampler_chain_add(chain,
+        llama_sampler_init_penalties(/*last_n*/64, /*repeat*/1.15f,
+                                     /*freq*/0.0f, /*present*/0.0f));
+    if (biases && nb > 0) {
+        llama_sampler_chain_add(chain,
+            llama_sampler_init_logit_bias(llama_vocab_n_tokens(vocab), nb, biases));
+    }
+    llama_sampler_chain_add(chain, llama_sampler_init_greedy());
+    return chain;
+}
+
 sombra_ctx * sombra_load(const char * model_path, int n_ctx, int n_gpu_layers) {
     if (!g_backend_ready) {
         llama_backend_init();
@@ -38,31 +58,50 @@ sombra_ctx * sombra_load(const char * model_path, int n_ctx, int n_gpu_layers) {
     struct llama_context * ctx = llama_init_from_model(model, cparams);
     if (!ctx) { llama_model_free(model); return NULL; }
 
-    // Sampler guloso: continuação mais provável => rápido e determinístico,
-    // ideal para autocomplete.
-    struct llama_sampler_chain_params sp = llama_sampler_chain_default_params();
-    struct llama_sampler * smpl = llama_sampler_chain_init(sp);
-    llama_sampler_chain_add(smpl, llama_sampler_init_greedy());
-
     sombra_ctx * c = (sombra_ctx *)calloc(1, sizeof(sombra_ctx));
     c->model   = model;
     c->ctx     = ctx;
     c->vocab   = llama_model_get_vocab(model);
-    c->sampler = smpl;
+    c->sampler = build_sampler(c->vocab, NULL, 0);
     return c;
+}
+
+// true se o modelo traz um template de chat embutido (instruct/it/chat).
+// Usado pelo Swift para decidir entre continuação crua (base) e
+// continuação via template (instruct), evitando o modo "assistente".
+bool sombra_has_chat_template(sombra_ctx * c) {
+    if (!c || !c->model) return false;
+    return llama_model_chat_template(c->model, NULL) != NULL;
+}
+
+// Aplica o template de chat do modelo a uma única mensagem `user` =
+// `instruction`, com o turno do assistente ABERTO (add_ass=true). O Swift
+// concatena o texto do usuário logo após, fazendo o modelo CONTINUAR esse
+// turno (prefill) em vez de "responder". Retorna o nº de bytes (>=0) ou -1.
+int sombra_build_chat_prefix(sombra_ctx * c, const char * instruction,
+                             char * out, int out_cap) {
+    if (!c || !c->model || !out || out_cap <= 1) return -1;
+    const char * tmpl = llama_model_chat_template(c->model, NULL);
+    if (!tmpl) { out[0] = '\0'; return 0; }
+    struct llama_chat_message msg[1];
+    msg[0].role = "user";
+    msg[0].content = instruction ? instruction : "";
+    int32_t n = llama_chat_apply_template(tmpl, msg, 1, /*add_ass=*/true, out, out_cap);
+    if (n < 0) { out[0] = '\0'; return -1; }
+    if (n >= out_cap) n = out_cap - 1; // truncado (improvável p/ instrução curta)
+    out[n] = '\0';
+    return n;
 }
 
 void sombra_set_bias(sombra_ctx * c, const char * words_nl, float strength) {
     if (!c) return;
     if (c->sampler) { llama_sampler_free(c->sampler); c->sampler = NULL; }
 
-    struct llama_sampler_chain_params sp = llama_sampler_chain_default_params();
-    struct llama_sampler * chain = llama_sampler_chain_init(sp);
+    llama_logit_bias biases[256];
+    int nb = 0;
 
     if (words_nl && strength > 0.0f) {
         const int n_vocab = llama_vocab_n_tokens(c->vocab);
-        llama_logit_bias biases[256];
-        int nb = 0;
         const char * p = words_nl;
         char word[256];
         while (*p && nb < 256) {
@@ -90,13 +129,9 @@ void sombra_set_bias(sombra_ctx * c, const char * words_nl, float strength) {
             biases[nb].bias = strength;
             nb++;
         }
-        if (nb > 0) {
-            llama_sampler_chain_add(chain, llama_sampler_init_logit_bias(n_vocab, nb, biases));
-        }
     }
 
-    llama_sampler_chain_add(chain, llama_sampler_init_greedy());
-    c->sampler = chain;
+    c->sampler = build_sampler(c->vocab, biases, nb);
 }
 
 void sombra_free(sombra_ctx * c) {
@@ -172,6 +207,12 @@ int sombra_complete(sombra_ctx * c,
     // Só pulamos um espaço inicial se o PRÓPRIO prompt já terminar em espaço
     // (para não duplicar), além de pular quebras de linha/tabs iniciais.
     const bool prompt_ends_space = (prompt_len > 0 && prompt[prompt_len - 1] == ' ');
+
+    // Zera o estado do sampler (buffer da repetition penalty). Sem isso, os
+    // tokens da sugestão ANTERIOR continuam penalizados na próxima chamada,
+    // degenerando a geração (sugestões cada vez mais curtas/vazias). A penalidade
+    // ainda atua DENTRO desta geração, evitando loops na própria sugestão.
+    if (c->sampler) llama_sampler_reset(c->sampler);
 
     int written = 0;
     int words_done = 0;     // palavras completas (contadas pelos espaços)

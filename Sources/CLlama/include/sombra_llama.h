@@ -35,6 +35,16 @@ int sombra_complete(sombra_ctx * c,
 // Reconstrói o sampler interno. Passar NULL/0 remove o viés.
 void sombra_set_bias(sombra_ctx * c, const char * words_nl, float strength);
 
+// true se o modelo traz template de chat embutido (instruct/it/chat).
+bool sombra_has_chat_template(sombra_ctx * c);
+
+// Monta o prefixo via template de chat: turno `user` = `instruction`, com o
+// turno do assistente aberto. O chamador concatena o texto a continuar logo
+// após (prefill), fazendo o modelo CONTINUAR em vez de "responder".
+// Escreve UTF-8 terminado em \0 em `out`. Retorna nº de bytes (>=0) ou -1.
+int sombra_build_chat_prefix(sombra_ctx * c, const char * instruction,
+                             char * out, int out_cap);
+
 #ifdef __cplusplus
 }
 #endif

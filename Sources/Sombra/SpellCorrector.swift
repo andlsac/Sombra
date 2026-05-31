@@ -16,15 +16,28 @@ enum SpellCorrector {
     static func correction(for word: String) -> String? {
         guard word.count >= 3, word.allSatisfy({ $0.isLetter }) else { return nil }
 
-        let r = checker.checkSpelling(of: word, startingAt: 0)
-        guard r.location != NSNotFound else { return nil } // já está correta
-
         let full = NSRange(location: 0, length: (word as NSString).length)
         let guesses = checker.guesses(forWordRange: full, in: word,
                                       language: checker.language(),
                                       inSpellDocumentWithTag: 0)
         guard let best = guesses?.first,
               best.lowercased() != word.lowercased() else { return nil }
-        return best
+
+        // Sinalizada como erro pelo corretor → aceita a melhor sugestão.
+        let flagged = checker.checkSpelling(of: word, startingAt: 0).location != NSNotFound
+        if flagged { return best }
+
+        // Não sinalizada, mas pode ser só FALTA DE ACENTO (ex.: "voce" → "você",
+        // "entao" → "então"). Nesse caso o macOS não marca como erro. Só corrige
+        // se a diferença for apenas de acento/caixa (mesmas letras "sem acento"),
+        // para nunca trocar uma palavra correta por outra (ex.: "então"→"estão").
+        if fold(best) == fold(word) { return best }
+        return nil
+    }
+
+    /// Normaliza removendo acentos e caixa, para comparar "mesma palavra".
+    private static func fold(_ s: String) -> String {
+        s.folding(options: [.diacriticInsensitive, .caseInsensitive],
+                  locale: Locale(identifier: "pt_BR"))
     }
 }
