@@ -21,6 +21,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 5. Introdução na primeira abertura.
         if !SombraSettings.shared.hasSeenOnboarding {
             OnboardingWindowController.shared.show()
+        } else if SombraSettings.shared.autoCheckUpdates {
+            // 6. Verificação automática (só se o usuário optou). Silenciosa:
+            //    abre a janela apenas se houver versão nova.
+            UpdateWindowController.shared.checkAndPresent(userInitiated: false)
         }
     }
 

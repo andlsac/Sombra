@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
     @ObservedObject var settings = SombraSettings.shared
     @ObservedObject var models = ModelManager.shared
+    @ObservedObject var updater = Updater.shared
     let onReloadModel: () -> Void
 
     @State private var newPrompt = ""
@@ -19,6 +20,7 @@ struct SettingsView: View {
             appearanceTab.tabItem { Label(L.t("Appearance", "Aparência"), systemImage: "paintpalette") }
             writingTab.tabItem { Label(L.t("Writing", "Escrita"), systemImage: "text.cursor") }
             appsTab.tabItem { Label("Apps", systemImage: "app.badge") }
+            updatesTab.tabItem { Label(L.t("Updates", "Atualizações"), systemImage: "arrow.down.circle") }
         }
         .frame(width: 500, height: 470)
         .padding()
@@ -26,6 +28,59 @@ struct SettingsView: View {
     }
 
     private var activePath: String { ModelLocator.find() ?? "" }
+
+    // MARK: - Atualizações
+
+    private var updatesTab: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(L.t("Updates", "Atualizações")).font(.headline)
+                Text(L.t("Current version: \(updater.currentVersion)",
+                         "Versão atual: \(updater.currentVersion)"))
+                    .font(.callout).foregroundStyle(.secondary)
+
+                Toggle(L.t("Check for updates automatically",
+                           "Buscar atualizações automaticamente"),
+                       isOn: $settings.autoCheckUpdates)
+                    .onChange(of: settings.autoCheckUpdates) {
+                        settings.hasAskedAutoUpdate = true
+                    }
+                Text(L.t("When on, Sombra checks GitHub once at launch. This is the only automatic network connection — off by default.",
+                         "Quando ligado, a Sombra consulta o GitHub uma vez ao abrir. É a única conexão de rede automática — desligado por padrão."))
+                    .font(.caption).foregroundStyle(.secondary)
+
+                Divider()
+
+                HStack(spacing: 10) {
+                    Button(L.t("Check now", "Verificar agora")) {
+                        UpdateWindowController.shared.checkAndPresent(userInitiated: true)
+                    }
+                    .disabled(updater.checking || updater.downloading)
+                    if updater.checking {
+                        ProgressView().controlSize(.small)
+                        Text(L.t("Checking…", "Verificando…")).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+
+                if let r = updater.available {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.down.circle.fill").foregroundStyle(.green)
+                        Text(L.t("Version \(r.version) available", "Versão \(r.version) disponível"))
+                            .font(.callout)
+                        Button(L.t("View…", "Ver…")) { UpdateWindowController.shared.show() }
+                            .buttonStyle(.link)
+                    }
+                } else if updater.upToDate {
+                    Text(L.t("You're on the latest version.", "Você está na versão mais recente."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if let err = updater.lastError {
+                    Text(err).font(.caption).foregroundStyle(.red)
+                }
+            }
+            .padding(.horizontal, 2)
+        }
+    }
 
     // MARK: - Modelo
 

@@ -41,8 +41,9 @@ the last word. Inspired by other apps of the genre, such as
 - Inference is **100% local** (`llama.cpp` + Metal). No cloud, no telemetry.
 - Sombra makes **no network connections during normal use** — it does not phone
   home.
-- The **only** moment it touches the internet is when **you** press **Download**
-  for a model in Preferences (files come from Hugging Face).
+- It only touches the internet **on your action**: downloading a model from
+  Hugging Face, or checking for app updates on GitHub. The **automatic** update
+  check is **opt-in** (off by default) — you choose during setup or in Preferences.
 - **Don't take my word for it:** the code is open audit it. If you'd rather be
   sure, block all of Sombra's connections with a firewall such as
   **[LuLu](https://objective-see.org/products/lulu.html)** (free & open-source),
@@ -72,6 +73,8 @@ the last word. Inspired by other apps of the genre, such as
   your text instead of “answering” like a chatbot, which is what makes the
   autocomplete feel natural.
 - **First-launch intro** that walks you through setup in a few steps.
+- **In-app updates** — check GitHub for new versions, read the changelog and
+  install with one click. Automatic checking is **opt-in**.
 
 ### Requirements
 
@@ -128,8 +131,9 @@ do cursor. Você aceita apertando **Tab**.
 
 - A inferência é **100% local** (`llama.cpp` + Metal). Sem nuvem, sem telemetria.
 - A Sombra **não faz nenhuma conexão de rede no uso normal** — não "liga pra casa".
-- A **única** vez que acessa a internet é quando **você** clica em **Baixar** um
-  modelo nas Preferências (arquivos vêm do Hugging Face).
+- Só acessa a internet **por ação sua**: baixar um modelo do Hugging Face ou
+  verificar atualizações no GitHub. A verificação **automática** é **opcional**
+  (desligada por padrão) — você escolhe na introdução ou nas Preferências.
 - **Não precisa confiar na minha palavra:** o código é aberto — verifique. Se
   preferir garantir, bloqueie todas as conexões da Sombra com um firewall como
   **[LuLu](https://objective-see.org/products/lulu.html)** (grátis e
@@ -155,6 +159,8 @@ do cursor. Você aceita apertando **Tab**.
   primeira abertura. Catálogo de **5 modelos base** (SmolLM2 e Qwen2.5), que
   *continuam* o seu texto em vez de “responder” como chatbot — o que dá o
   autocomplete mais natural.
+- **Atualizações no app** — verifica novas versões no GitHub, mostra o changelog
+  e instala com um clique. A verificação automática é **opcional**.
 
 ### Preferências (👻 na barra de menu → "Preferências…", ⌘,)
 
@@ -204,6 +210,7 @@ Acessibilidade → Sombra). É a única permissão necessária. Como o app é as
 | Correção | `SpellCorrector.swift` | NSSpellChecker (multilíngue) da última palavra |
 | Preferências/GUI | `SombraSettings.swift`, `SettingsView.swift`, `SettingsWindowController.swift` | Estado persistido + janela SwiftUI |
 | Modelos | `ModelManager.swift`, `ModelCatalog.swift`, `ModelLocator.swift` | Baixar/importar/apagar/localizar `.gguf` |
+| Atualizações | `Updater.swift`, `UpdateView.swift` | Verifica releases do GitHub, baixa o `.dmg` e troca o app (opt-in) |
 
 ```
 digitação (thread do tap, não bloqueia)
@@ -238,6 +245,7 @@ Se a Sombra for útil pra você e quiser apoiar — totalmente opcional:
 - [x] Bloquear apps + prompts por app
 - [x] KV-cache reuse entre teclas
 - [x] Preferências persistidas + GUI
+- [x] Atualização no app pelo GitHub (verificação automática opcional)
 - [ ] Modo corretor gramatical de frase (via chat template)
 - [ ] Acompanhar fonte/tamanho do app alvo na sombra
 - [ ] Teardown limpo do Metal ao sair

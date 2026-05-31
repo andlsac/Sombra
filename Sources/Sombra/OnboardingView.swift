@@ -4,8 +4,9 @@ import AppKit
 /// Introdução rápida mostrada na primeira abertura (avança página a página).
 struct OnboardingView: View {
     let onDone: () -> Void
+    @ObservedObject private var settings = SombraSettings.shared
     @State private var page = 0
-    private let lastPage = 3
+    private let lastPage = 4
 
     var body: some View {
         VStack(spacing: 0) {
@@ -63,6 +64,22 @@ struct OnboardingView: View {
                  title: L.t("How to use", "Como usar"),
                  text: L.t("Type normally. A faint suggestion appears by the cursor — press \(key) to accept it, word by word. If the last word is misspelled, a correction shows in orange and \(key) replaces it.",
                            "Digite normalmente. Uma sugestão clara aparece ao lado do cursor — aperte \(key) para aceitar, palavra por palavra. Se a última palavra estiver errada, a correção aparece em laranja e o \(key) substitui."))
+        case 3:
+            VStack(spacing: 14) {
+                Text("🔄").font(.system(size: 52))
+                Text(L.t("Stay up to date", "Manter atualizada")).font(.title2).bold()
+                Text(L.t("Sombra can check GitHub for new versions and install them for you. This is the only automatic network connection — your choice, and you can change it anytime in Preferences.",
+                         "A Sombra pode verificar novas versões no GitHub e instalá-las pra você. É a única conexão de rede automática — você decide, e pode mudar quando quiser nas Preferências."))
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Toggle(L.t("Check for updates automatically",
+                           "Buscar atualizações automaticamente"),
+                       isOn: $settings.autoCheckUpdates)
+                    .toggleStyle(.switch)
+                    .fixedSize()
+            }
+            .onAppear { settings.hasAskedAutoUpdate = true }
         default:
             step(icon: "⚙️",
                  title: L.t("You're all set", "Tudo pronto"),

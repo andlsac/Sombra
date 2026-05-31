@@ -112,6 +112,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         prefs.target = self
         menu.addItem(prefs)
 
+        let updates = NSMenuItem(title: L.t("Check for updates…", "Verificar atualizações…"),
+                                 action: #selector(checkForUpdates), keyEquivalent: "")
+        updates.target = self
+        menu.addItem(updates)
+
         menu.addItem(.separator())
 
         let quit = NSMenuItem(title: L.t("Quit", "Sair"), action: #selector(quit), keyEquivalent: "q")
@@ -137,6 +142,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     @objc private func openPreferences() {
         SettingsWindowController.shared.show()
+    }
+
+    @objc private func checkForUpdates() {
+        UpdateWindowController.shared.checkAndPresent(userInitiated: true)
     }
 
     @objc private func openAccessibilitySettings() {

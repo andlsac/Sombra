@@ -50,6 +50,10 @@ final class SombraSettings: ObservableObject {
     // Já viu a introdução (onboarding)?
     @Published var hasSeenOnboarding: Bool { didSet { d.set(hasSeenOnboarding, forKey: K.onboarded) } }
 
+    // Atualizações: buscar automaticamente (opt-in) e se já perguntamos ao usuário.
+    @Published var autoCheckUpdates: Bool { didSet { d.set(autoCheckUpdates, forKey: K.autoUpd) } }
+    @Published var hasAskedAutoUpdate: Bool { didSet { d.set(hasAskedAutoUpdate, forKey: K.askedUpd) } }
+
     // Mostrar o app no Dock (padrão: só na barra de menu).
     @Published var showInDock: Bool {
         didSet { d.set(showInDock, forKey: K.dock); NotificationCenter.default.post(name: .sombraDockChanged, object: nil) }
@@ -76,6 +80,7 @@ final class SombraSettings: ObservableObject {
         static let persOn = "personalizeEnabled", persStr = "personalizeStrength", persAll = "storeAllInputs"
         static let akKey = "acceptKeyCode", akMods = "acceptModifiers", akLabel = "acceptKeyLabel"
         static let onboarded = "hasSeenOnboarding", dock = "showInDock"
+        static let autoUpd = "autoCheckUpdates", askedUpd = "hasAskedAutoUpdate"
         static let r = "ghostR", g = "ghostG", b = "ghostB", a = "ghostA"
     }
 
@@ -98,6 +103,8 @@ final class SombraSettings: ObservableObject {
         acceptKeyLabel = d.string(forKey: K.akLabel) ?? "Tab"
         hasSeenOnboarding = d.bool(forKey: K.onboarded)
         showInDock = d.bool(forKey: K.dock)
+        autoCheckUpdates = d.bool(forKey: K.autoUpd)        // opt-in: padrão desligado
+        hasAskedAutoUpdate = d.bool(forKey: K.askedUpd)
         // Padrão: cinza discreto. O usuário pode deixar vivo.
         ghostR = d.object(forKey: K.r) as? Double ?? 0.50
         ghostG = d.object(forKey: K.g) as? Double ?? 0.50
