@@ -6,7 +6,14 @@ import os
 @MainActor
 final class SuggestionEngine {
     private let overlay = GhostOverlay()
+    private let indicator = IndicatorOverlay()
     private let keyTap = KeyTap()
+
+    // "Armar" sugestões: o texto sugerido só aparece DEPOIS da primeira digitação
+    // no campo atual. Antes disso, mostramos apenas o ícone indicador (presença).
+    // Uma tecla arma; trocar de app ou de campo (salto grande) desarma.
+    private var armed = false
+    private var lastFieldOrigin: CGPoint?
 
     /// Lido pela thread do tap para decidir (sem hop) se consome o Tab.
     /// Mantido em sincronia com `currentSuffix`.
@@ -123,6 +130,7 @@ final class SuggestionEngine {
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     self.lastKeystroke = Date()
+                    self.armed = true   // o usuário digitou: a partir daqui pode sugerir
                     if !self.currentSuffix.isEmpty { self.dismissGhost() }
                     self.scheduleEvaluate()
                 }
@@ -154,11 +162,12 @@ final class SuggestionEngine {
         inFlight?.cancel()
         keyTap.stop()
         overlay.hide()
+        indicator.hide()
     }
 
     func setEnabled(_ on: Bool) {
         enabled = on
-        if !on { dismissGhost() }
+        if !on { dismissGhost(); indicator.hide() }
     }
 
     // MARK: - Personalização (aprende com a sua escrita)
@@ -217,13 +226,35 @@ final class SuggestionEngine {
             guard Date().timeIntervalSince(lastKeystroke) >= debounce else { return }
         }
 
-        guard let focus = AXReader.read() else { dismissGhost(); return }
+        guard let focus = AXReader.read() else { dismissGhost(); indicator.hide(); return }
         lastCaretRect = focus.caretRect
         lastElementRect = focus.elementRect
-        lastBundleId = focus.appBundleId
 
-        // App bloqueado pelo usuário (ex.: gerenciador de senhas): não sugere.
-        if SombraSettings.shared.isBlocked(focus.appBundleId) { dismissGhost(); return }
+        // App bloqueado pelo usuário (ex.: gerenciador de senhas): nem ícone, nem sugestão.
+        if SombraSettings.shared.isBlocked(focus.appBundleId) {
+            lastBundleId = focus.appBundleId
+            dismissGhost(); indicator.hide(); return
+        }
+
+        // "Desarma" ao trocar de app, ou de campo na mesma janela (salto grande
+        // da origem do campo) — volta a mostrar só o ícone até digitar de novo.
+        let originNow = focus.elementRect?.origin
+        if focus.appBundleId != lastBundleId {
+            armed = false
+        } else if let o = originNow, let p = lastFieldOrigin,
+                  abs(o.x - p.x) > 60 || abs(o.y - p.y) > 60 {
+            armed = false
+        }
+        lastBundleId = focus.appBundleId
+        if let o = originNow { lastFieldOrigin = o }
+
+        // Indicador de presença: visível sempre que há um campo de texto válido
+        // em foco (mesmo sem nada digitado), ancorado no canto da janela.
+        let winRect = AXReader.windowFrame(for: focus.element) ?? (focus.elementRect ?? .zero)
+        indicator.show(windowRect: winRect)
+
+        // Ainda não digitou neste campo → apenas o ícone, sem sugestão de texto.
+        guard armed else { dismissGhost(); return }
 
         // Personalização (modo "guardar tudo"): aprende com o que você digita.
         recordWritingIfEnabled(focus.prefix)

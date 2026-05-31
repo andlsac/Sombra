@@ -63,6 +63,9 @@ the last word. Inspired by other apps of the genre, such as
   prompts** (email, browser, messaging…).
 - **Works in most apps**, including Electron/Chromium ones (Claude, VS Code,
   Slack…) it turns on their Accessibility tree on demand.
+- **Presence indicator** — a small Sombra badge sits at the top-right of the
+  focused window so you know it's active. Text suggestions appear only **after
+  you start typing**, never the instant a field gets focus.
 - Configurable: suggestion length (up to 15 words), **accept shortcut**, bubble
   color/opacity, menu-bar icon.
 - **Optional personalization** — learns the words you use (stored locally) and
@@ -153,6 +156,10 @@ do cursor. Você aceita apertando **Tab**.
 - **Bubble** à frente do cursor (com fallback abaixo do campo; nunca sai da tela).
 - **Funciona na maioria dos apps**, incluindo Electron/Chromium (Claude, VS Code,
   Slack…) — liga a árvore de acessibilidade deles sob demanda.
+- **Indicador de presença** — um pequeno badge da Sombra fica no canto superior
+  direito da janela em foco, pra você saber que ela está ativa. As sugestões de
+  texto só aparecem **depois que você começa a digitar**, nunca no instante em
+  que o campo recebe foco.
 - **Personalização opcional** — aprende as palavras que você usa (guardadas
   localmente) e as favorece nas sugestões, com um controle de intensidade.
 - **Atalho configurável**, até **15 palavras** por sugestão, e **introdução** na
@@ -204,6 +211,7 @@ Acessibilidade → Sombra). É a única permissão necessária. Como o app é as
 | Leitura de texto | `AXReader.swift` | Janela de texto perto do cursor + posição + app dono (Accessibility) |
 | Captura do Tab | `KeyTap.swift` | `CGEventTap` em **thread dedicada**; consome o Tab via flag atômica |
 | Bubble | `GhostOverlay.swift` | `NSPanel` à frente do cursor (cor configurável / laranja na correção) |
+| Indicador | `IndicatorOverlay.swift` | Badge da Sombra no canto da janela; presença ativa (sugestão só após digitar) |
 | Inserção | `TextInjector.swift` | Digita/substitui via CGEvent Unicode + Backspace (eventos marcados) |
 | Orquestração | `SuggestionEngine.swift` | Loop orientado a evento: ler → prever → mostrar → aceitar |
 | Inferência | `LlamaPredictor.swift`, `Sources/CLlama/` | Shim C sobre llama.cpp + KV-cache |

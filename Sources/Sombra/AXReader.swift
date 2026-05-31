@@ -127,6 +127,15 @@ enum AXReader {
         return v as? String
     }
 
+    /// Frame da JANELA que contém o elemento focado (coords de tela, top-left).
+    /// Usado para ancorar o ícone indicador no canto da janela.
+    static func windowFrame(for element: AXUIElement) -> CGRect? {
+        var winRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXWindowAttribute as CFString, &winRef) == .success,
+              let w = winRef else { return nil }
+        return elementRect(for: (w as! AXUIElement))
+    }
+
     /// Bundle id do app que possui o elemento focado.
     static func bundleId(for element: AXUIElement) -> String? {
         var pid: pid_t = 0

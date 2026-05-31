@@ -24,6 +24,7 @@ cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 [ -f "$ROOT/Resources/AppIcon.icns" ] && cp -f "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/"
 [ -f "$ROOT/Resources/menu-black.png" ] && cp -f "$ROOT/Resources/menu-black.png" "$APP/Contents/Resources/"
 [ -f "$ROOT/Resources/menu-white.png" ] && cp -f "$ROOT/Resources/menu-white.png" "$APP/Contents/Resources/"
+[ -f "$ROOT/Resources/indicator.png" ] && cp -f "$ROOT/Resources/indicator.png" "$APP/Contents/Resources/"
 
 # Bibliotecas do llama.cpp (resolvidas em runtime via @executable_path/../Frameworks).
 if [ -d "$ROOT/Frameworks" ]; then
