@@ -35,6 +35,15 @@ enum SpellCorrector {
         return nil
     }
 
+    /// true se a palavra é sinalizada como ERRADA pelo corretor. Usado para
+    /// descartar completações no meio da palavra que formam não-palavras
+    /// (ex.: "canc" + "lar" = "canclar").
+    @MainActor
+    static func isMisspelled(_ word: String) -> Bool {
+        guard word.count >= 3, word.allSatisfy({ $0.isLetter }) else { return false }
+        return checker.checkSpelling(of: word, startingAt: 0).location != NSNotFound
+    }
+
     /// Normaliza removendo acentos e caixa, para comparar "mesma palavra".
     private static func fold(_ s: String) -> String {
         s.folding(options: [.diacriticInsensitive, .caseInsensitive],

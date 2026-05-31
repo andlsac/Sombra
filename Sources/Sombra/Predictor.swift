@@ -4,9 +4,11 @@ import Foundation
 /// por um `MLXPredictor` (SmolLM2 / Gemma) mantendo esta interface.
 protocol Predictor: AnyObject {
     /// Dado o texto antes do cursor e o contexto de prompt (instruções gerais +
-    /// do app atual), retorna o sufixo previsto, ou nil.
+    /// do app atual), retorna o sufixo previsto, ou nil. `maxWords` limita o
+    /// tamanho (no meio da palavra usamos poucas palavras → geração rápida que
+    /// aparece já enquanto você digita).
     /// Deve ser cancelável e rodar fora do main thread.
-    func predict(prefix: String, promptContext: String) async -> String?
+    func predict(prefix: String, promptContext: String, maxWords: Int) async -> String?
 
     /// Personalização: favorece as palavras dadas com um bônus em logits.
     /// `strength` <= 0 ou lista vazia remove o viés.
@@ -41,7 +43,7 @@ final class HeuristicPredictor: Predictor {
         "available", "information", "regarding", "schedule", "document"
     ]
 
-    func predict(prefix: String, promptContext: String) async -> String? {
+    func predict(prefix: String, promptContext: String, maxWords: Int) async -> String? {
         let lower = prefix.lowercased()
         guard !lower.isEmpty else { return nil }
 

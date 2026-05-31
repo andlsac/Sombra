@@ -28,8 +28,11 @@ static struct llama_sampler * build_sampler(const struct llama_vocab * vocab,
                                             const llama_logit_bias * biases, int nb) {
     struct llama_sampler_chain_params sp = llama_sampler_chain_default_params();
     struct llama_sampler * chain = llama_sampler_chain_init(sp);
+    // Anti-repetição: só repeat penalty (a frequency penalty deixava a geração
+    // "burra" — penalizava palavras comuns). last_n cobre o contexto recente para
+    // reduzir o eco do texto já escrito.
     llama_sampler_chain_add(chain,
-        llama_sampler_init_penalties(/*last_n*/64, /*repeat*/1.15f,
+        llama_sampler_init_penalties(/*last_n*/128, /*repeat*/1.2f,
                                      /*freq*/0.0f, /*present*/0.0f));
     if (biases && nb > 0) {
         llama_sampler_chain_add(chain,
@@ -54,6 +57,8 @@ sombra_ctx * sombra_load(const char * model_path, int n_ctx, int n_gpu_layers) {
     struct llama_context_params cparams = llama_context_default_params();
     cparams.n_ctx   = (uint32_t)(n_ctx > 0 ? n_ctx : 2048);
     cparams.n_batch = cparams.n_ctx;
+    // Flash Attention acelera a atenção no Metal (sobretudo em modelos maiores).
+    cparams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
 
     struct llama_context * ctx = llama_init_from_model(model, cparams);
     if (!ctx) { llama_model_free(model); return NULL; }
@@ -148,8 +153,11 @@ int sombra_complete(sombra_ctx * c,
                     char * out, int out_cap,
                     int max_tokens,
                     int max_words,
-                    bool stop_on_newline) {
+                    bool stop_on_newline,
+                    const int * cur_gen, int my_gen) {
     if (!c || !out || out_cap <= 1) return -1;
+    // Pedido já obsoleto antes de começar (o usuário digitou de novo): aborta.
+    if (cur_gen && *cur_gen != my_gen) return 0;
     out[0] = '\0';
     if (max_words < 1) max_words = 1;
 
@@ -221,6 +229,10 @@ int sombra_complete(sombra_ctx * c,
     bool stop = false;
 
     for (int t = 0; t < max_tokens && !stop; t++) {
+        // Cancelamento: se chegou um pedido mais novo, aborta — MAS só depois de
+        // já ter uns caracteres, para completações curtas (ex.: "entre"->"tanto")
+        // aparecerem mesmo enquanto você digita. Gerações longas abortam cedo.
+        if (cur_gen && *cur_gen != my_gen && written >= 8) break;
         llama_token id = llama_sampler_sample(c->sampler, c->ctx, -1);
         if (llama_vocab_is_eog(c->vocab, id)) break;
 

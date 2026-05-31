@@ -37,10 +37,34 @@ final class SuggestionEngine {
 
     /// Recarrega o preditor a partir do modelo atualmente selecionado.
     /// O carregamento roda fora da main thread (mmap + Metal podem demorar).
+    private var isReloading = false
+    private var modelUnloaded = false   // modelo liberado da RAM por ociosidade
+
+    /// Descarrega o modelo da RAM após X min ocioso (libera RAM). Recarrega na
+    /// próxima digitação (a 1ª sugestão depois disso é mais lenta).
+    private func checkIdleUnload() {
+        let mins = SombraSettings.shared.unloadIdleMinutes
+        guard mins > 0, !isReloading, !modelUnloaded, predictor is LlamaPredictor else { return }
+        guard Date().timeIntervalSince(lastKeystroke) > Double(mins) * 60 else { return }
+        inFlight?.cancel()
+        dismissGhost()
+        predictor = HeuristicPredictor()   // libera o LlamaPredictor (deinit → free)
+        modelUnloaded = true
+        modelDescription = L.t("Unloaded (idle)", "Descarregado (ocioso)")
+        onModelChanged?()
+    }
+
     func reloadModel() {
+        // Evita carregar dois modelos ao mesmo tempo (Metal/llama) — causava crash.
+        guard !isReloading else { return }
+        isReloading = true
         let path = ModelLocator.find()
         modelDescription = L.t("Loading…", "Carregando…")
         onModelChanged?()
+        // Cancela e descarta o preditor atual ANTES de carregar o novo, para não
+        // manter dois contextos vivos simultaneamente.
+        inFlight?.cancel()
+        dismissGhost()
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let newPredictor: Predictor
             let desc: String
@@ -58,6 +82,7 @@ final class SuggestionEngine {
                 self.modelDescription = desc
                 self.dismissGhost()
                 self.lastPrefix = ""
+                self.isReloading = false
                 self.onModelChanged?()
             }
         }
@@ -77,6 +102,7 @@ final class SuggestionEngine {
     private var lastCaretRect: CGRect?
     private var lastElementRect: CGRect?
     private var lastBundleId: String?
+    private var lastAtEnd = true   // cursor no fim da linha? → sombra à frente vs abaixo
 
     // Tipo da sugestão atual: continuação (autocomplete) ou correção ortográfica.
     private enum Mode { case autocomplete, correction }
@@ -88,7 +114,9 @@ final class SuggestionEngine {
     // Debounce: só prevê após o usuário pausar brevemente a digitação.
     // Curto porque o KV-cache deixou o reprocessamento barato.
     private var lastKeystroke = Date.distantPast
-    private let debounce: TimeInterval = 0.07
+    // Curto = responsivo (estilo Cotypist). Seguro agora que gerações obsoletas
+    // são abortadas (cancelamento), então não acumula carga/calor.
+    private let debounce: TimeInterval = 0.045
 
     // Janela em que o polling é suspenso enquanto o texto aceito é injetado
     // (evita reagir ao estado transitório do campo).
@@ -101,6 +129,9 @@ final class SuggestionEngine {
         let s = SombraSettings.shared
         keyTap.acceptKeyCode = CGKeyCode(s.acceptKeyCode)
         keyTap.acceptModifiers = s.acceptModifiers
+        // Atalho de aceitar-tudo (opcional): keyCode < 0 = desativado.
+        keyTap.acceptAllKeyCode = s.acceptAllKeyCode >= 0 ? CGKeyCode(s.acceptAllKeyCode) : 0xFFFF
+        keyTap.acceptAllModifiers = s.acceptAllModifiers
     }
 
     func start() {
@@ -110,6 +141,12 @@ final class SuggestionEngine {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.updateShortcut() }
         }
+        // Recarrega o modelo quando muda (ex.: baixado no onboarding/Preferências).
+        NotificationCenter.default.addObserver(
+            forName: .sombraReloadModel, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reloadModel() }
+        }
 
         let flag = hasSuggestion
         keyTap.onTab = { [weak self] in
@@ -118,7 +155,16 @@ final class SuggestionEngine {
             let consume = flag.withLock { $0 }
             if consume, let self {
                 DispatchQueue.main.async {
-                    MainActor.assumeIsolated { _ = self.acceptIfPossible() }
+                    MainActor.assumeIsolated { _ = self.acceptIfPossible(whole: false) }
+                }
+            }
+            return consume
+        }
+        keyTap.onAcceptAll = { [weak self] in
+            let consume = flag.withLock { $0 }
+            if consume, let self {
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated { _ = self.acceptIfPossible(whole: true) }
                 }
             }
             return consume
@@ -130,6 +176,8 @@ final class SuggestionEngine {
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     self.lastKeystroke = Date()
+                    // Acorda o modelo se foi descarregado por ociosidade.
+                    if self.modelUnloaded { self.modelUnloaded = false; self.reloadModel() }
                     self.armed = true   // o usuário digitou: a partir daqui pode sugerir
                     if !self.currentSuffix.isEmpty { self.dismissGhost() }
                     self.scheduleEvaluate()
@@ -141,7 +189,7 @@ final class SuggestionEngine {
         // Timer LENTO só de segurança: pega mudanças sem teclado (cursor movido
         // pelo mouse, troca de campo/app). A avaliação rápida é orientada a evento.
         pollTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.tick() }
+            MainActor.assumeIsolated { self?.checkIdleUnload(); self?.tick() }
         }
         NSLog("[Sombra] Motor iniciado. Acessibilidade: \(Permissions.hasAccessibility)")
     }
@@ -253,6 +301,13 @@ final class SuggestionEngine {
         let winRect = AXReader.windowFrame(for: focus.element) ?? (focus.elementRect ?? .zero)
         indicator.show(windowRect: winRect)
 
+        // Contexto da tela (opt-in): classifica o app/página e dispara o OCR na
+        // troca de contexto. Roda em background; não bloqueia a digitação.
+        if SombraSettings.shared.useScreenContext {
+            ScreenContext.shared.update(bundleId: focus.appBundleId,
+                                        windowTitle: AXReader.windowTitle(for: focus.element))
+        }
+
         // Ainda não digitou neste campo → apenas o ícone, sem sugestão de texto.
         guard armed else { dismissGhost(); return }
 
@@ -273,12 +328,17 @@ final class SuggestionEngine {
         }
         guard boundary else { dismissGhost(); return }
 
+        // Fim da linha/texto? (nada depois do cursor na linha) → sombra à frente.
+        // Senão (editando no meio), a sombra vai ABAIXO pra não cobrir o texto.
+        lastAtEnd = atTextEnd || (focus.nextChar.map { $0 == "\n" || $0 == "\r" } ?? true)
+
         let prefix = focus.prefix
         guard prefix != lastPrefix else {
             // Mesmo prefixo: só reposiciona a sombra (cursor pode ter movido).
             if !currentSuffix.isEmpty {
                 overlay.show(suffix: currentSuffix, caretRect: lastCaretRect,
-                             elementRect: lastElementRect, isCorrection: mode == .correction)
+                             elementRect: lastElementRect, isCorrection: mode == .correction,
+                             atEnd: lastAtEnd)
             }
             return
         }
@@ -318,47 +378,80 @@ final class SuggestionEngine {
             mode = .autocomplete
             correction = nil
             currentSuffix = learned
-            overlay.show(suffix: learned, caretRect: lastCaretRect, elementRect: lastElementRect)
+            overlay.show(suffix: learned, caretRect: lastCaretRect, elementRect: lastElementRect, atEnd: lastAtEnd)
             return
         }
 
         refreshBiasIfNeeded()
-        // Contexto: prompts gerais + prompts específicos do app atual.
-        let context = SombraSettings.shared.effectiveContext(forApp: lastBundleId)
+        // Contexto: tela (app/página + OCR, se ligado) + prompts gerais e por app.
+        let userCtx = SombraSettings.shared.effectiveContext(forApp: lastBundleId)
+        let screenCtx = ScreenContext.shared.prompt
+        let context = [screenCtx, userCtx].filter { !$0.isEmpty }.joined(separator: " ")
+        // No meio da palavra geramos POUCAS palavras (rápido → aparece enquanto
+        // você digita); na fronteira, o tamanho configurado.
+        let midWord = prefix.last.map { $0.isLetter || $0.isNumber } ?? false
+        let full = SombraSettings.shared.suggestionWords
+        let maxWords = midWord ? min(3, full) : full
         inFlight = Task { [weak self] in
             guard let self else { return }
-            let suffix = await self.predictor.predict(prefix: prefix, promptContext: context)
+            let suffix = await self.predictor.predict(prefix: prefix, promptContext: context, maxWords: maxWords)
             if Task.isCancelled { return }
             await MainActor.run {
                 // Só aplica se o prefixo ainda é o atual.
                 guard self.lastPrefix == prefix else { return }
 
-                // Estamos no meio/fim de uma palavra ainda sem espaço?
+                // Relê a posição do cursor AGORA (a predição é assíncrona; o
+                // cursor pode ter avançado) — evita a sombra aparecer "no meio".
+                if let f = AXReader.read() {
+                    self.lastCaretRect = f.caretRect
+                    self.lastElementRect = f.elementRect
+                }
+
+                // Está no meio/fim de uma palavra (sem espaço)?
                 let endsLetter = prefix.last.map { $0.isLetter || $0.isNumber } ?? false
-                // O modelo está CONTINUANDO essa mesma palavra (sufixo sem espaço
-                // inicial)? Se sim, a palavra está incompleta — completa, não corrige.
+                // O modelo CONTINUA a mesma palavra (sufixo sem espaço inicial)?
                 let continuesWord = endsLetter && (suffix?.first.map { $0 != " " } ?? false)
 
-                if let suffix, !suffix.isEmpty, continuesWord {
-                    self.showAutocomplete(suffix)
-                } else if endsLetter, let fix = self.spellCorrectionForLastWord(in: prefix) {
-                    // O modelo iniciou outra palavra (ou não sugeriu): a palavra
-                    // recém-digitada parece "fechada". Se estiver errada, corrige.
-                    self.showCorrection(fix)
-                } else if let suffix, !suffix.isEmpty {
-                    self.showAutocomplete(suffix) // continuação normal (próxima palavra)
+                if endsLetter {
+                    // MEIO DE PALAVRA: só completa a própria palavra (se válida).
+                    // NUNCA injeta uma palavra nova aqui (evitava "cal" -> "cal ça").
+                    if let suffix, !suffix.isEmpty, continuesWord,
+                       self.midWordCompletionIsValid(prefix: prefix, suffix: suffix) {
+                        self.showAutocomplete(suffix)
+                    } else if let fix = self.spellCorrectionForLastWord(in: prefix) {
+                        self.showCorrection(fix)   // palavra "fechada" e errada → corrige
+                    } else {
+                        self.dismissGhost()
+                    }
                 } else {
-                    self.dismissGhost()
+                    // FRONTEIRA (após espaço/pontuação): sugere a próxima palavra.
+                    if let suffix, !suffix.isEmpty {
+                        self.showAutocomplete(suffix)
+                    } else {
+                        self.dismissGhost()
+                    }
                 }
             }
         }
+    }
+
+    /// A palavra formada por (parcial no fim do prefixo + início do sufixo) é
+    /// uma palavra real? Evita completar "canc" -> "canclar".
+    private func midWordCompletionIsValid(prefix: String, suffix: String) -> Bool {
+        let partial = String(prefix.reversed().prefix { $0.isLetter }.reversed())
+        guard !partial.isEmpty else { return true }
+        let comp = String(suffix.prefix { $0.isLetter })
+        let full = partial + comp
+        guard full.count >= 3 else { return true }
+        return !SpellCorrector.isMisspelled(full)
     }
 
     private func showAutocomplete(_ suffix: String) {
         mode = .autocomplete
         correction = nil
         currentSuffix = suffix
-        overlay.show(suffix: suffix, caretRect: lastCaretRect, elementRect: lastElementRect)
+        overlay.show(suffix: suffix, caretRect: lastCaretRect, elementRect: lastElementRect,
+                     atEnd: lastAtEnd)
     }
 
     private func showCorrection(_ fix: (wrong: String, right: String)) {
@@ -366,7 +459,7 @@ final class SuggestionEngine {
         correction = fix
         currentSuffix = fix.right
         overlay.show(suffix: fix.right, caretRect: lastCaretRect,
-                     elementRect: lastElementRect, isCorrection: true)
+                     elementRect: lastElementRect, isCorrection: true, atEnd: lastAtEnd)
     }
 
     // MARK: - Aceitar / descartar
@@ -374,7 +467,7 @@ final class SuggestionEngine {
     /// Chamado pelo KeyTap quando o Tab é pressionado.
     /// Aceita APENAS a próxima palavra; o restante da sombra permanece.
     /// Retorna true se havia algo a aceitar (e o Tab deve ser consumido).
-    private func acceptIfPossible() -> Bool {
+    private func acceptIfPossible(whole: Bool = false) -> Bool {
         guard enabled, !currentSuffix.isEmpty else { return false }
 
         // Modo correção: substitui a palavra errada pela correta.
@@ -390,8 +483,31 @@ final class SuggestionEngine {
             return true
         }
 
-        let (word, rest) = Self.firstWord(currentSuffix)
+        // Aceitar a FRASE INTEIRA de uma vez (atalho dedicado).
+        if whole {
+            var all = currentSuffix
+            if lastPrefix.last == " " { while all.first == " " { all.removeFirst() } }
+            guard !all.isEmpty else { return false }
+            suppressUntil = Date().addingTimeInterval(0.2)
+            overlay.hide()
+            TextInjector.insert(all)
+            lastPrefix += all
+            currentSuffix = ""
+            if SombraSettings.shared.personalizeEnabled, !SombraSettings.shared.isBlocked(lastBundleId) {
+                WritingProfile.shared.record(all)
+            }
+            return true
+        }
+
+        var (word, rest) = Self.firstWord(currentSuffix)
         guard !word.isEmpty else { return false }
+
+        // Normaliza o espaço inicial: no máximo UM, e ZERO se o texto antes do
+        // cursor já termina em espaço. (Corrige o "dois espaços" ao aceitar.)
+        let hadLeadingSpace = word.first == " "
+        while word.first == " " { word.removeFirst() }
+        if hadLeadingSpace, lastPrefix.last != " " { word = " " + word }
+        guard !word.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
 
         // Suspende o polling enquanto o texto é injetado e "assenta".
         suppressUntil = Date().addingTimeInterval(0.15)
@@ -417,7 +533,7 @@ final class SuggestionEngine {
                     self.lastElementRect = f.elementRect
                 }
                 self.overlay.show(suffix: self.currentSuffix, caretRect: self.lastCaretRect,
-                                  elementRect: self.lastElementRect)
+                                  elementRect: self.lastElementRect, atEnd: self.lastAtEnd)
             }
         }
         return true

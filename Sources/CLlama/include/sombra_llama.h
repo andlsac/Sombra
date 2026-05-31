@@ -23,12 +23,15 @@ void sombra_free(sombra_ctx * c);
 // Para em: token de fim, `max_words` palavras, nova linha (se stop_on_newline)
 // ou `max_tokens` (limite de segurança). Espaços/quebras iniciais são pulados.
 // Retorna o nº de bytes escritos (>=0), ou -1 em erro.
+// `cur_gen`/`my_gen`: cancelamento cooperativo. Se cur_gen != NULL e
+// *cur_gen != my_gen durante a geração, ela é abortada (pedido obsoleto).
 int sombra_complete(sombra_ctx * c,
                     const char * prompt,
                     char * out, int out_cap,
                     int max_tokens,
                     int max_words,
-                    bool stop_on_newline);
+                    bool stop_on_newline,
+                    const int * cur_gen, int my_gen);
 
 // Personalização: favorece (logit bias) os tokens iniciais das palavras dadas
 // (separadas por '\n'). `strength` é o bônus em logits (0 = desliga).

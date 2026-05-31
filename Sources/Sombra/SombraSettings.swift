@@ -5,6 +5,7 @@ extension Notification.Name {
     static let sombraIconChanged = Notification.Name("sombraIconChanged")
     static let sombraShortcutChanged = Notification.Name("sombraShortcutChanged")
     static let sombraDockChanged = Notification.Name("sombraDockChanged")
+    static let sombraReloadModel = Notification.Name("sombraReloadModel")
 }
 
 /// Preferências persistidas (UserDefaults). Observável pela GUI.
@@ -33,6 +34,22 @@ final class SombraSettings: ObservableObject {
     // Remover ponto final das sugestões (muitas vezes inútil).
     @Published var removeTrailingPeriod: Bool { didSet { d.set(removeTrailingPeriod, forKey: K.trimDot) } }
 
+    // Mostrar a sugestão como sombra INLINE (colada no cursor, sem bubble).
+    @Published var inlineGhost: Bool { didSet { d.set(inlineGhost, forKey: K.inline) } }
+
+    // Atalho dedicado para aceitar a FRASE INTEIRA (Tab segue palavra-por-palavra).
+    // keyCode = -1 → desativado.
+    @Published var acceptAllKeyCode: Int {
+        didSet { d.set(acceptAllKeyCode, forKey: K.acceptAllKey); NotificationCenter.default.post(name: .sombraShortcutChanged, object: nil) }
+    }
+    @Published var acceptAllModifiers: Int {
+        didSet { d.set(acceptAllModifiers, forKey: K.acceptAllMods); NotificationCenter.default.post(name: .sombraShortcutChanged, object: nil) }
+    }
+    @Published var acceptAllKeyLabel: String { didSet { d.set(acceptAllKeyLabel, forKey: K.acceptAllLabel) } }
+
+    // Descarregar o modelo da RAM após X minutos ocioso (0 = nunca).
+    @Published var unloadIdleMinutes: Int { didSet { d.set(unloadIdleMinutes, forKey: K.unload) } }
+
     // Atalho para aceitar a sugestão (keycode + modificadores em bitmask 1=⌘ 2=⌥ 4=⌃ 8=⇧).
     @Published var acceptKeyCode: Int {
         didSet { d.set(acceptKeyCode, forKey: K.akKey); NotificationCenter.default.post(name: .sombraShortcutChanged, object: nil) }
@@ -53,6 +70,10 @@ final class SombraSettings: ObservableObject {
     // Atualizações: buscar automaticamente (opt-in) e se já perguntamos ao usuário.
     @Published var autoCheckUpdates: Bool { didSet { d.set(autoCheckUpdates, forKey: K.autoUpd) } }
     @Published var hasAskedAutoUpdate: Bool { didSet { d.set(hasAskedAutoUpdate, forKey: K.askedUpd) } }
+
+    // Contexto da tela: classifica o app/página e lê o texto visível (OCR) para
+    // dar contexto ao modelo. Opt-in (pede permissão de gravação de tela).
+    @Published var useScreenContext: Bool { didSet { d.set(useScreenContext, forKey: K.screenCtx) } }
 
     // Mostrar o app no Dock (padrão: só na barra de menu).
     @Published var showInDock: Bool {
@@ -81,6 +102,9 @@ final class SombraSettings: ObservableObject {
         static let akKey = "acceptKeyCode", akMods = "acceptModifiers", akLabel = "acceptKeyLabel"
         static let onboarded = "hasSeenOnboarding", dock = "showInDock"
         static let autoUpd = "autoCheckUpdates", askedUpd = "hasAskedAutoUpdate"
+        static let screenCtx = "useScreenContext"
+        static let inline = "inlineGhost", unload = "unloadIdleMinutes"
+        static let acceptAllKey = "acceptAllKeyCode", acceptAllMods = "acceptAllModifiers", acceptAllLabel = "acceptAllKeyLabel"
         static let r = "ghostR", g = "ghostG", b = "ghostB", a = "ghostA"
     }
 
@@ -95,6 +119,11 @@ final class SombraSettings: ObservableObject {
         suggestionWords = min(max(w, 1), 15)
         menuIcon = d.string(forKey: K.icon) ?? "👻"
         removeTrailingPeriod = d.object(forKey: K.trimDot) as? Bool ?? true
+        inlineGhost = d.object(forKey: K.inline) as? Bool ?? false
+        unloadIdleMinutes = d.object(forKey: K.unload) as? Int ?? 0
+        acceptAllKeyCode = d.object(forKey: K.acceptAllKey) as? Int ?? -1   // -1 = desativado
+        acceptAllModifiers = d.object(forKey: K.acceptAllMods) as? Int ?? 0
+        acceptAllKeyLabel = d.string(forKey: K.acceptAllLabel) ?? L.t("None", "Nenhum")
         personalizeEnabled = d.object(forKey: K.persOn) as? Bool ?? false
         personalizeStrength = d.object(forKey: K.persStr) as? Double ?? 0.4
         storeAllInputs = d.object(forKey: K.persAll) as? Bool ?? true
@@ -105,6 +134,7 @@ final class SombraSettings: ObservableObject {
         showInDock = d.bool(forKey: K.dock)
         autoCheckUpdates = d.bool(forKey: K.autoUpd)        // opt-in: padrão desligado
         hasAskedAutoUpdate = d.bool(forKey: K.askedUpd)
+        useScreenContext = d.bool(forKey: K.screenCtx)      // opt-in: padrão desligado
         // Padrão: cinza discreto. O usuário pode deixar vivo.
         ghostR = d.object(forKey: K.r) as? Double ?? 0.50
         ghostG = d.object(forKey: K.g) as? Double ?? 0.50

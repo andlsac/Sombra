@@ -13,18 +13,75 @@ struct SettingsView: View {
     @State private var newAppPrompt = ""
     @State private var recordingTarget: String?  // "word" ou "all"
     @State private var shortcutMonitor: Any?
+    @State private var tab = 0
+
+    // Abas: (EN, PT, símbolo, cor candy) — multi-candy.
+    private var tabs: [(String, String, String, Color)] {
+        [("Model", "Modelo", "cpu", Candy.bondi),
+         ("Behavior", "Comportamento", "slider.horizontal.3", Candy.strawberry),
+         ("Writing", "Escrita", "text.cursor", Candy.lime),
+         ("Apps", "Apps", "app.badge", Candy.tangerine),
+         ("Appearance", "Aparência", "paintpalette", Candy.grape),
+         ("Updates", "Atualizações", "arrow.down.circle", Candy.blueberry),
+         ("Support", "Doações", "heart.fill", Candy.strawberry)]
+    }
+    private var tabTint: Color { tabs[min(tab, tabs.count - 1)].3 }
 
     var body: some View {
-        TabView {
-            modelTab.tabItem { Label(L.t("Model", "Modelo"), systemImage: "cpu") }
-            appearanceTab.tabItem { Label(L.t("Appearance", "Aparência"), systemImage: "paintpalette") }
-            writingTab.tabItem { Label(L.t("Writing", "Escrita"), systemImage: "text.cursor") }
-            appsTab.tabItem { Label("Apps", systemImage: "app.badge") }
-            updatesTab.tabItem { Label(L.t("Updates", "Atualizações"), systemImage: "arrow.down.circle") }
+        ZStack {
+            AeroBackground(tint: tabTint)
+            VStack(spacing: 12) {
+                tabBar
+                Group {
+                    switch tab {
+                    case 0: modelTab
+                    case 1: behaviorTab
+                    case 2: writingTab
+                    case 3: appsTab
+                    case 4: appearanceTab
+                    case 5: updatesTab
+                    default: donationsTab
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .glassCard(tint: tabTint, cornerRadius: 18)
+            }
+            .padding(.top, 40)   // espaço p/ a barra de título transparente + botões
+            .padding([.horizontal, .bottom], 16)
         }
-        .frame(width: 500, height: 470)
-        .padding()
+        .frame(minWidth: 820, minHeight: 600)
+        .tint(tabTint)
+        .toggleStyle(GlossyToggleStyle())
+        .animation(.easeInOut(duration: 0.2), value: tab)
         .onAppear { models.refreshInstalled() }
+    }
+
+    /// Barra de abas glossy no topo (opções sempre em cima).
+    private var tabBar: some View {
+        HStack(spacing: 6) {
+            ForEach(0..<tabs.count, id: \.self) { i in
+                let t = tabs[i]
+                Button { tab = i } label: {
+                    VStack(spacing: 2) {
+                        Image(systemName: t.2).font(.system(size: 13, weight: .semibold))
+                        Text(L.t(t.0, t.1)).font(.system(size: 10, weight: .medium)).lineLimit(1)
+                    }
+                    .foregroundStyle(tab == i ? Color.white : Color.primary.opacity(0.75))
+                    .frame(maxWidth: .infinity).padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(tab == i
+                                  ? AnyShapeStyle(LinearGradient(colors: [t.3.opacity(0.85), t.3],
+                                                                 startPoint: .top, endPoint: .bottom))
+                                  : AnyShapeStyle(Color.white.opacity(0.10)))
+                            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                .strokeBorder(.white.opacity(tab == i ? 0.45 : 0.12), lineWidth: 1))
+                    )
+                    .shadow(color: tab == i ? t.3.opacity(0.30) : .clear, radius: 4, y: 2)
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 
     private var activePath: String { ModelLocator.find() ?? "" }
@@ -213,9 +270,16 @@ struct SettingsView: View {
         if f.contains(.option) { mods |= 2 }
         if f.contains(.control) { mods |= 4 }
         if f.contains(.shift) { mods |= 8 }
-        settings.acceptKeyCode = Int(ev.keyCode)
-        settings.acceptModifiers = mods
-        settings.acceptKeyLabel = Self.shortcutLabel(keyCode: Int(ev.keyCode), modifiers: mods, event: ev)
+        let label = Self.shortcutLabel(keyCode: Int(ev.keyCode), modifiers: mods, event: ev)
+        if recordingTarget == "all" {
+            settings.acceptAllKeyCode = Int(ev.keyCode)
+            settings.acceptAllModifiers = mods
+            settings.acceptAllKeyLabel = label
+        } else {
+            settings.acceptKeyCode = Int(ev.keyCode)
+            settings.acceptModifiers = mods
+            settings.acceptKeyLabel = label
+        }
         stopRecording()
     }
 
@@ -225,7 +289,12 @@ struct SettingsView: View {
     }
 
     private func resetShortcut(_ target: String) {
-        settings.acceptKeyCode = 48; settings.acceptModifiers = 0; settings.acceptKeyLabel = "Tab"
+        if target == "all" {
+            settings.acceptAllKeyCode = -1; settings.acceptAllModifiers = 0
+            settings.acceptAllKeyLabel = L.t("None", "Nenhum")
+        } else {
+            settings.acceptKeyCode = 48; settings.acceptModifiers = 0; settings.acceptKeyLabel = "Tab"
+        }
     }
 
     static func shortcutLabel(keyCode: Int, modifiers: Int, event: NSEvent?) -> String {
@@ -251,26 +320,29 @@ struct SettingsView: View {
         return s
     }
 
-    // MARK: - Aparência
+    // MARK: - Comportamento
 
-    private var appearanceTab: some View {
+    private var behaviorTab: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 16) {
-            Text(L.t("Suggestion", "Sugestão")).font(.headline)
+            Text(L.t("Suggestions", "Sugestões")).font(.headline)
 
             Stepper(value: $settings.suggestionWords, in: 1...15) {
                 Text(L.t("Words per suggestion: \(settings.suggestionWords)",
                          "Palavras por sugestão: \(settings.suggestionWords)"))
             }
-            Text(L.t("How many words the model predicts and shows at once. Fewer = faster.",
-                     "Quantas palavras o modelo prevê e mostra de cada vez. Menos = mais rápido."))
+            Text(L.t("How many words the model predicts and shows at once. Fewer = faster & cooler.",
+                     "Quantas palavras o modelo prevê e mostra de cada vez. Menos = mais rápido e frio."))
                 .font(.caption).foregroundStyle(.secondary)
 
             Toggle(L.t("Remove trailing period from suggestions",
                        "Remover ponto final das sugestões"), isOn: $settings.removeTrailingPeriod)
 
-            // Atalho para aceitar.
+            Divider()
+            Text(L.t("Shortcuts", "Atalhos")).font(.subheadline).bold()
+
             HStack {
-                Text(L.t("Accept shortcut", "Atalho para aceitar"))
+                Text(L.t("Accept (word by word)", "Aceitar (palavra por palavra)"))
                 Spacer()
                 Button(recordingTarget == "word" ? L.t("Press keys…", "Aperte as teclas…")
                                                  : settings.acceptKeyLabel) { toggleRecording("word") }
@@ -279,10 +351,45 @@ struct SettingsView: View {
                     Button(L.t("Reset", "Padrão")) { resetShortcut("word") }
                 }
             }
-            Text(L.t("Press this to accept a suggestion, word by word (default: Tab).",
-                     "Aperte isto para aceitar a sugestão, palavra por palavra (padrão: Tab)."))
+            HStack {
+                Text(L.t("Accept whole suggestion", "Aceitar a frase inteira"))
+                Spacer()
+                Button(recordingTarget == "all" ? L.t("Press a key…", "Pressione uma tecla…")
+                                                 : settings.acceptAllKeyLabel) { toggleRecording("all") }
+                    .frame(minWidth: 90)
+                if settings.acceptAllKeyCode >= 0 {
+                    Button { resetShortcut("all") } label: { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.borderless).foregroundStyle(.secondary)
+                }
+            }
+            Text(L.t("Optional separate shortcut: inserts the entire suggestion at once.",
+                     "Atalho separado opcional: insere a sugestão inteira de uma vez."))
                 .font(.caption).foregroundStyle(.secondary)
 
+            Divider()
+            Text(L.t("Performance", "Desempenho")).font(.subheadline).bold()
+            Picker(L.t("Unload model when idle", "Descarregar modelo ocioso"),
+                   selection: $settings.unloadIdleMinutes) {
+                Text(L.t("Never", "Nunca")).tag(0)
+                Text(L.t("After 2 min", "Após 2 min")).tag(2)
+                Text(L.t("After 5 min", "Após 5 min")).tag(5)
+                Text(L.t("After 15 min", "Após 15 min")).tag(15)
+                Text(L.t("After 30 min", "Após 30 min")).tag(30)
+            }
+            .pickerStyle(.menu)
+            Text(L.t("Frees RAM after idle. Trade-off: the first suggestion after that is slower (the model reloads).",
+                     "Libera RAM após ocioso. Contrapartida: a 1ª sugestão depois fica mais lenta (o modelo recarrega)."))
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        }
+    }
+
+    // MARK: - Aparência
+
+    private var appearanceTab: some View {
+        ScrollView {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(L.t("Shadow", "Sombra")).font(.headline)
             ColorPicker(L.t("Suggestion color", "Cor da sugestão"), selection: Binding(
                 get: { settings.ghostColor },
                 set: { settings.ghostColor = $0 }
@@ -303,7 +410,47 @@ struct SettingsView: View {
             Text(L.t("By default Sombra lives only in the menu bar.",
                      "Por padrão a Sombra fica só na barra de menu."))
                 .font(.caption).foregroundStyle(.secondary)
-            Spacer()
+        }
+        }
+    }
+
+    // MARK: - Doações
+
+    private var donationsTab: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(L.t("Support Sombra", "Apoie a Sombra")).font(.headline)
+                Text(L.t("Sombra is free and open source. If it's useful to you, a tip is hugely appreciated — totally optional.",
+                         "A Sombra é gratuita e de código aberto. Se for útil pra você, uma ajuda é muito bem-vinda — totalmente opcional."))
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Link(destination: URL(string: "https://ko-fi.com/andre38264")!) {
+                    Label("Ko-fi", systemImage: "cup.and.saucer.fill")
+                }.buttonStyle(GlossyButtonStyle(tint: Candy.tangerine))
+
+                Link(destination: URL(string: "https://www.paypal.com/donate/?business=FF3HTRZWDV8HS&no_recurring=0&item_name=Hey+you+%3AD&currency_code=EUR")!) {
+                    Label("PayPal", systemImage: "creditcard.fill")
+                }.buttonStyle(GlossyButtonStyle(tint: Candy.blueberry))
+
+                Divider()
+                Text(L.t("Pix (Brazil)", "Pix (Brasil)")).font(.subheadline).bold()
+                HStack {
+                    Text("37adbd1c-6e5e-4d2f-916a-04bc892fe496")
+                        .font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                    Spacer()
+                    Button(L.t("Copy", "Copiar")) {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString("37adbd1c-6e5e-4d2f-916a-04bc892fe496", forType: .string)
+                    }.buttonStyle(GlossyButtonStyle(tint: Candy.lime))
+                }
+
+                Divider()
+                Link(destination: URL(string: "https://github.com/andlsac/Sombra")!) {
+                    Label(L.t("Project on GitHub", "Projeto no GitHub"), systemImage: "chevron.left.forwardslash.chevron.right")
+                }
+            }
+            .padding(.horizontal, 2)
         }
     }
 
@@ -342,6 +489,17 @@ struct SettingsView: View {
                 Text(L.t("Add short instructions (style, language…). They become the context sent to the model. Empty = raw continuation.",
                          "Adicione instruções curtas (estilo, idioma…). Elas viram o contexto enviado ao modelo. Sem nada = continuação pura."))
                     .font(.caption).foregroundStyle(.secondary)
+
+                Divider()
+                Toggle(L.t("Use screen context (OCR)", "Usar contexto da tela (OCR)"),
+                       isOn: $settings.useScreenContext)
+                    .onChange(of: settings.useScreenContext) {
+                        if settings.useScreenContext { ScreenContext.requestScreenPermission() }
+                    }
+                Text(L.t("Detects the app/page (email, browser, notes…) and reads visible text so suggestions fit the context. Asks for Screen Recording; off by default.",
+                         "Detecta o app/página (email, navegador, notas…) e lê o texto visível para as sugestões combinarem com o contexto. Pede Gravação de Tela; desligado por padrão."))
+                    .font(.caption).foregroundStyle(.secondary)
+                Divider()
 
                 // Campo para digitar e adicionar um prompt.
                 HStack {

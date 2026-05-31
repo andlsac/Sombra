@@ -66,16 +66,19 @@ the last word. Inspired by other apps of the genre, such as
 - **Presence indicator** — a small Sombra badge sits at the top-right of the
   focused window so you know it's active. Text suggestions appear only **after
   you start typing**, never the instant a field gets focus.
-- Configurable: suggestion length (up to 15 words), **accept shortcut**, bubble
-  color/opacity, menu-bar icon.
+- **Screen context (OCR)** — optional: detects the app/page (email, browser,
+  Reddit, GitHub…) and reads visible text so suggestions fit the context. Opt-in
+  (asks for Screen Recording); off by default.
+- Configurable: suggestion length, **accept shortcut**, a separate **accept-whole
+  shortcut**, idle model unload (frees RAM), shadow color/opacity, menu-bar icon.
 - **Optional personalization** — learns the words you use (stored locally) and
   gently favors them in suggestions, via a tunable "favor my words" dial.
-- **Bilingual UI** (English / Portuguese) that follows your system language.
-- **5 curated base models** to download (SmolLM2 & Qwen2.5, ~140 MB to ~1.8 GB),
-  or import any `.gguf`. These are **base (completion) models** — they *continue*
-  your text instead of “answering” like a chatbot, which is what makes the
-  autocomplete feel natural.
-- **First-launch intro** that walks you through setup in a few steps.
+- **Bilingual UI** (English / Portuguese) that follows your system language, in a
+  **glossy "Frutiger Aero" theme** (translucent glass, vivid candy colors).
+- **Lightweight app, no embedded model** — the app is ~16 MB; you pick and
+  download a model on first launch. Curated catalog (Gemma 4 E2B *recommended*,
+  Gemma 3 1B, Qwen3-1.7B, Qwen3-4B), or import any `.gguf`.
+- **First-launch intro** that walks you through permissions and the model.
 - **In-app updates** — check GitHub for new versions, read the changelog and
   install with one click. Automatic checking is **opt-in**.
 
@@ -88,10 +91,13 @@ the last word. Inspired by other apps of the genre, such as
 
 ```bash
 ./scripts/build_llama.sh      # build llama.cpp (libs + Metal), ~2-4 min
-./scripts/download_model.sh   # download the base model (Qwen2.5-0.5B, ~506 MB)
-./scripts/bundle.sh release   # build & package Sombra.app (model embedded)
-open ./build/Sombra.app
+./scripts/bundle.sh release   # build & package Sombra.app (~16 MB, no model)
+open ./build/Sombra.app        # pick & download a model on first launch
 ```
+
+The app ships **without a model** (lightweight). On first launch you choose one
+from the catalog and it downloads. For a headless test you can grab a small model
+with `./scripts/download_model.sh` first.
 
 Grant **Accessibility** (System Settings → Privacy & Security → Accessibility →
 Sombra). That is the only permission required.
@@ -153,19 +159,23 @@ do cursor. Você aceita apertando **Tab**.
   palavras válidas. Sem custo do modelo (instantâneo).
 - **Edição no meio do texto** — completa a palavra que você está digitando e
   sugere as próximas nas fronteiras de palavra.
-- **Bubble** à frente do cursor (com fallback abaixo do campo; nunca sai da tela).
+- **Bubble** na frente do cursor (no fim da linha) ou acima dele (editando no
+  meio), pra ficar sempre visível sem cobrir o texto.
 - **Funciona na maioria dos apps**, incluindo Electron/Chromium (Claude, VS Code,
-  Slack…) — liga a árvore de acessibilidade deles sob demanda.
-- **Indicador de presença** — um pequeno badge da Sombra fica no canto superior
-  direito da janela em foco, pra você saber que ela está ativa. As sugestões de
-  texto só aparecem **depois que você começa a digitar**, nunca no instante em
-  que o campo recebe foco.
+  Slack…). *Obs.:* nesses, a posição do cursor é imprecisa (limitação do macOS).
+- **Indicador de presença** — um pequeno badge da Sombra no canto da janela em
+  foco. As sugestões só aparecem **depois que você começa a digitar**.
+- **Contexto da tela (OCR)** — opcional: detecta o app/página (email, navegador,
+  Reddit, GitHub…) e lê o texto visível pra sugestões mais no contexto. Opt-in
+  (pede Gravação de Tela); desligado por padrão.
 - **Personalização opcional** — aprende as palavras que você usa (guardadas
   localmente) e as favorece nas sugestões, com um controle de intensidade.
-- **Atalho configurável**, até **15 palavras** por sugestão, e **introdução** na
-  primeira abertura. Catálogo de **5 modelos base** (SmolLM2 e Qwen2.5), que
-  *continuam* o seu texto em vez de “responder” como chatbot — o que dá o
-  autocomplete mais natural.
+- **Atalhos configuráveis** (aceitar palavra-por-palavra e aceitar a frase
+  inteira), descarregar modelo ocioso, e **introdução** na primeira abertura.
+- **App leve, sem modelo embutido** (~16 MB) — você escolhe e baixa o modelo no
+  início. Catálogo: **Gemma 4 E2B** (recomendado), Gemma 3 1B, Qwen3-1.7B,
+  Qwen3-4B — ou importe qualquer `.gguf`.
+- **Tema glossy "Frutiger Aero"** (vidro translúcido, cores vivas) em claro/escuro.
 - **Atualizações no app** — verifica novas versões no GitHub, mostra o changelog
   e instala com um clique. A verificação automática é **opcional**.
 
@@ -194,10 +204,13 @@ app em foco.
 
 ```bash
 ./scripts/build_llama.sh      # compila o llama.cpp (libs + Metal), ~2-4 min
-./scripts/download_model.sh   # baixa o modelo base (Qwen2.5-0.5B, ~506 MB)
-./scripts/bundle.sh release   # compila e empacota o Sombra.app (modelo embutido)
-open ./build/Sombra.app
+./scripts/bundle.sh release   # compila e empacota o Sombra.app (~16 MB, sem modelo)
+open ./build/Sombra.app        # escolha e baixe um modelo na 1ª abertura
 ```
+
+O app vem **sem modelo** (leve). Na primeira abertura você escolhe um do catálogo
+e ele baixa. Para teste sem GUI, baixe um modelo pequeno antes com
+`./scripts/download_model.sh`.
 
 Conceda a **Acessibilidade** (Ajustes do Sistema → Privacidade e Segurança →
 Acessibilidade → Sombra). É a única permissão necessária. Como o app é assinado

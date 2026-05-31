@@ -13,10 +13,13 @@ final class ScreenOCR {
     /// Texto da tela mais recente (pode estar levemente defasado — tudo bem).
     var latest: String { cached }
 
-    /// Dispara uma atualização do OCR se já passou tempo suficiente.
-    func refreshIfNeeded() {
-        guard !running, Date().timeIntervalSince(lastRun) > minInterval else { return }
-        guard Permissions.ensureScreenRecording() else { return }
+    /// Dispara uma atualização do OCR. `force` ignora o intervalo mínimo (usado
+    /// quando o contexto muda — troca de app/janela). Usa só o *preflight* da
+    /// permissão (não abre prompt aqui; o prompt é feito ao ligar o recurso).
+    func refresh(force: Bool = false) {
+        guard !running else { return }
+        if !force, Date().timeIntervalSince(lastRun) <= minInterval { return }
+        guard CGPreflightScreenCaptureAccess() else { return }
         running = true
         lastRun = Date()
 

@@ -130,10 +130,25 @@ enum AXReader {
     /// Frame da JANELA que contém o elemento focado (coords de tela, top-left).
     /// Usado para ancorar o ícone indicador no canto da janela.
     static func windowFrame(for element: AXUIElement) -> CGRect? {
+        guard let w = window(for: element) else { return nil }
+        return elementRect(for: w)
+    }
+
+    /// Título da janela que contém o elemento focado (título da aba do navegador,
+    /// assunto do email…). Usado para classificar o contexto.
+    static func windowTitle(for element: AXUIElement) -> String? {
+        guard let w = window(for: element) else { return nil }
+        var t: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(w, kAXTitleAttribute as CFString, &t) == .success else { return nil }
+        let s = (t as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (s?.isEmpty == false) ? s : nil
+    }
+
+    private static func window(for element: AXUIElement) -> AXUIElement? {
         var winRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, kAXWindowAttribute as CFString, &winRef) == .success,
               let w = winRef else { return nil }
-        return elementRect(for: (w as! AXUIElement))
+        return (w as! AXUIElement)
     }
 
     /// Bundle id do app que possui o elemento focado.
@@ -180,8 +195,24 @@ enum AXReader {
     }
 
     /// Retângulo de tela do cursor, para posicionar a sombra.
+    /// Tenta o range de comprimento 0 no cursor; se vier vazio/zerado (comum em
+    /// apps Electron/Chromium), tenta o retângulo do caractere ANTERIOR e usa a
+    /// borda direita dele como posição do cursor.
     static func caretRect(for element: AXUIElement, location: Int) -> CGRect? {
-        var cfRange = CFRange(location: max(0, location), length: 0)
+        if let r = boundsForRange(element, location: max(0, location), length: 0),
+           r.height > 0 {
+            return r
+        }
+        if location > 0, let r = boundsForRange(element, location: location - 1, length: 1),
+           r.height > 0, !(r.origin == .zero && r.size == .zero) {
+            // Cursor logo após o caractere anterior.
+            return CGRect(x: r.maxX, y: r.minY, width: 1, height: r.height)
+        }
+        return nil
+    }
+
+    private static func boundsForRange(_ element: AXUIElement, location: Int, length: Int) -> CGRect? {
+        var cfRange = CFRange(location: location, length: length)
         guard let axRange = AXValueCreate(.cfRange, &cfRange) else { return nil }
         var boundsRef: CFTypeRef?
         let err = AXUIElementCopyParameterizedAttributeValue(

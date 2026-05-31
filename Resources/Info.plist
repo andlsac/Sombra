@@ -2,27 +2,25 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key>
-    <string>Sombra</string>
-    <key>CFBundleDisplayName</key>
-    <string>Sombra</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.sombra.autocomplete</string>
-    <key>CFBundleVersion</key>
-    <string>0.4.1</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.4.1</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleExecutable</key>
-    <string>Sombra</string>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>14.0</string>
-    <!-- App de menu bar por padrão (sem Dock). O usuário pode ativar o Dock
-         nas Preferências (setActivationPolicy em runtime). -->
-    <key>LSUIElement</key>
-    <true/>
+	<key>CFBundleDisplayName</key>
+	<string>Sombra</string>
+	<key>CFBundleExecutable</key>
+	<string>Sombra</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.sombra.autocomplete</string>
+	<key>CFBundleName</key>
+	<string>Sombra</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.5.0</string>
+	<key>CFBundleVersion</key>
+	<string>0.5.0</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
 </dict>
 </plist>

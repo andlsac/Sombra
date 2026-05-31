@@ -31,13 +31,15 @@ if [ -d "$ROOT/Frameworks" ]; then
     cp -f "$ROOT/Frameworks/"*.dylib "$APP/Contents/Frameworks/"
 fi
 
-# Modelo .gguf empacotado (se já baixado).
-if compgen -G "$ROOT/models/"*.gguf > /dev/null; then
+# Modelo .gguf: por padrão NÃO embutimos (app leve — o usuário escolhe e baixa
+# o modelo no onboarding). Use SOMBRA_EMBED_MODEL=1 para embutir (ex.: build
+# offline/demo).
+if [ "${SOMBRA_EMBED_MODEL:-0}" = "1" ] && compgen -G "$ROOT/models/"*.gguf > /dev/null; then
     mkdir -p "$APP/Contents/Resources/models"
     cp -f "$ROOT/models/"*.gguf "$APP/Contents/Resources/models/"
-    echo "    Modelo incluído no bundle."
+    echo "    Modelo embutido (SOMBRA_EMBED_MODEL=1)."
 else
-    echo "    (Sem modelo em ./models — rode scripts/download_model.sh; o app cai no heurístico.)"
+    echo "    App sem modelo embutido (leve). O modelo é baixado no onboarding."
 fi
 
 # Assinatura ad-hoc: necessária para Acessibilidade/Event Tap persistirem

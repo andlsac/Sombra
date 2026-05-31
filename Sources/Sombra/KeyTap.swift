@@ -10,7 +10,9 @@ import CoreGraphics
 final class KeyTap {
     /// Retorna true se o Tab deve ser consumido (havia sugestão). Síncrono e leve.
     var onTab: (() -> Bool)?
-    /// Chamado em qualquer keyDown que não seja o atalho de aceitar.
+    /// Aceitar a FRASE INTEIRA (atalho separado, opcional). Retorna true se consumiu.
+    var onAcceptAll: (() -> Bool)?
+    /// Chamado em qualquer keyDown que não seja um atalho de aceitar.
     var onOtherKey: (() -> Void)?
 
     private var tap: CFMachPort?
@@ -22,6 +24,9 @@ final class KeyTap {
     // Atualizados pela main thread; lidos no callback do tap (leitura de Int é benigna).
     var acceptKeyCode: CGKeyCode = 48
     var acceptModifiers: Int = 0  // bitmask 1=⌘ 2=⌥ 4=⌃ 8=⇧
+    // Atalho de "aceitar frase inteira" (opcional). 0xFFFF = desativado.
+    var acceptAllKeyCode: CGKeyCode = 0xFFFF
+    var acceptAllModifiers: Int = 0
 
     /// Converte os flags de um CGEvent para o nosso bitmask de modificadores.
     private static func modMask(_ flags: CGEventFlags) -> Int {
@@ -75,6 +80,12 @@ final class KeyTap {
 
                 let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
                 let mods = KeyTap.modMask(event.flags)
+                // Atalho de aceitar a frase INTEIRA (se configurado).
+                if me.acceptAllKeyCode != 0xFFFF
+                    && keyCode == me.acceptAllKeyCode && mods == me.acceptAllModifiers {
+                    if me.onAcceptAll?() == true { return nil }
+                    return Unmanaged.passUnretained(event)
+                }
                 if keyCode == me.acceptKeyCode && mods == me.acceptModifiers {
                     if me.onTab?() == true { return nil } // consome o atalho ao aceitar
                     return Unmanaged.passUnretained(event)

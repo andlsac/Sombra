@@ -13,10 +13,15 @@ final class LlamaPredictor: Predictor {
     private let handle: LlamaHandle           // sombra_ctx*
     private var ctx: OpaquePointer { handle.ctx }
     private let queue = DispatchQueue(label: "com.sombra.llama", qos: .userInitiated)
-    private let maxPrefixChars = 800
+    // Janela de contexto curta: autocomplete não precisa de muito, e prefixo
+    // longo = muito processamento de prompt na GPU (calor) em textos grandes.
+    private let maxPrefixChars = 320
     /// Modelo instruct/chat (tem template embutido). Tratado via prefill de chat
     /// para CONTINUAR o texto em vez de "responder" como assistente.
     private let isInstruct: Bool
+    /// Contador de geração: cada predict() incrementa; gerações antigas (na fila
+    /// ou em curso) abortam ao ver um valor mais novo → mata backlog/calor.
+    private let genPtr = UnsafeMutablePointer<Int32>.allocate(capacity: 1)
 
     /// Falha (retorna nil) se o modelo não puder ser carregado.
     init?(modelPath: String, nCtx: Int32 = 2048) {
@@ -26,18 +31,27 @@ final class LlamaPredictor: Predictor {
         }
         self.handle = LlamaHandle(ctx: c)
         self.isInstruct = sombra_has_chat_template(c)
+        genPtr.initialize(to: 0)
         NSLog("[Sombra] Modelo carregado: \(modelPath) (instruct=\(self.isInstruct))")
 
         // Pré-aquece: a 1ª inferência compila os pipelines Metal (~vários seg).
         // Fazemos isso já no carregamento para a 1ª sugestão real ser rápida.
         queue.async { [handle] in
             var buf = [CChar](repeating: 0, count: 32)
-            _ = sombra_complete(handle.ctx, "Olá, ", &buf, 32, 6, 2, true)
+            _ = sombra_complete(handle.ctx, "Olá, ", &buf, 32, 6, 2, true, nil, 0)
             NSLog("[Sombra] Modelo pré-aquecido.")
         }
     }
 
-    deinit { sombra_free(ctx) }
+    deinit {
+        // Espera a fila de inferência terminar (warmup/predição em curso) ANTES
+        // de liberar o contexto — senão a troca de modelo causa use-after-free
+        // (crash) porque sombra_complete ainda estaria usando o ctx liberado.
+        let c = handle.ctx
+        queue.sync {}
+        sombra_free(c)
+        genPtr.deallocate()
+    }
 
     func setBias(words: [String], strength: Float) {
         let joined = words.joined(separator: "\n")
@@ -50,21 +64,28 @@ final class LlamaPredictor: Predictor {
         }
     }
 
-    func predict(prefix: String, promptContext: String) async -> String? {
-        let words = Int32(min(max(SombraSettings.shared.suggestionWords, 1), 15))
-        let maxTokens = words * 8 + 4 // teto de segurança (subpalavras)
+    func predict(prefix: String, promptContext: String, maxWords: Int) async -> String? {
+        let words = Int32(min(max(maxWords, 1), 15))
+        let maxTokens = words * 6 + 4 // teto de segurança (subpalavras)
         let trimDot = SombraSettings.shared.removeTrailingPeriod
         let isInstruct = self.isInstruct
         let maxPrefix = self.maxPrefixChars
+        let ctxLower = promptContext.lowercased()
+        // Marca esta geração como a mais recente; gerações anteriores abortam.
+        genPtr.pointee &+= 1
+        let myGen = genPtr.pointee
+        let genPtr = self.genPtr
         return await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
             queue.async { [handle] in
+                // Já obsoleta (usuário digitou de novo): não gera (evita backlog/calor).
+                guard genPtr.pointee == myGen else { cont.resume(returning: nil); return }
                 let prompt = Self.buildPrompt(prefix: prefix, context: promptContext,
                                               isInstruct: isInstruct, handle: handle,
                                               maxPrefixChars: maxPrefix)
                 let cap = 512
                 var buf = [CChar](repeating: 0, count: cap)
                 let n = sombra_complete(handle.ctx, prompt, &buf, Int32(cap),
-                                        maxTokens, words, true)
+                                        maxTokens, words, true, genPtr, myGen)
                 guard n > 0 else { cont.resume(returning: nil); return }
                 var s = Self.sanitize(String(cString: buf))
                 if trimDot {
@@ -75,6 +96,12 @@ final class LlamaPredictor: Predictor {
                 // Descarta lixo só-símbolos (ex.: '''/***/---), comum em modelos
                 // pequenos. Uma sugestão útil precisa de ao menos uma letra/dígito.
                 guard s.contains(where: { $0.isLetter || $0.isNumber }) else {
+                    cont.resume(returning: nil); return
+                }
+                // Anti-eco: às vezes o modelo "repete" as instruções de contexto
+                // (ex.: "Aguarde 2 palavras para trocar de idioma"). Descarta se o
+                // sufixo for um trecho do contexto.
+                if !ctxLower.isEmpty, s.count >= 8, ctxLower.contains(s.lowercased()) {
                     cont.resume(returning: nil); return
                 }
                 cont.resume(returning: s.isEmpty ? nil : s)

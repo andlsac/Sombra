@@ -45,13 +45,15 @@ final class GhostOverlay {
     /// Mostra `suffix`, ancorado no cursor (`caretRect`) ou, se inválido,
     /// abaixo do campo focado (`elementRect`). Retângulos em coords de tela
     /// (origem no canto superior esquerdo do display principal).
-    func show(suffix: String, caretRect: CGRect?, elementRect: CGRect?, isCorrection: Bool = false) {
+    func show(suffix: String, caretRect: CGRect?, elementRect: CGRect?,
+              isCorrection: Bool = false, atEnd: Bool = true) {
         guard !suffix.isEmpty else { hide(); return }
 
         // Correção ortográfica em laranja; autocomplete na cor configurável.
         label.textColor = isCorrection ? NSColor.systemOrange : SombraSettings.shared.nsGhostColor
         bubble.layer?.backgroundColor = NSColor.textBackgroundColor.withAlphaComponent(0.96).cgColor
         bubble.layer?.borderColor = NSColor.separatorColor.cgColor
+        panel.hasShadow = true
 
         label.stringValue = suffix
         label.sizeToFit()
@@ -59,8 +61,11 @@ final class GhostOverlay {
         size.width = min(size.width, 520) // não estoura a tela
         let bubbleSize = NSSize(width: size.width + hInset * 2, height: size.height + vInset * 2)
 
+        // No fim da linha → à frente do cursor; editando no meio → acima (visível,
+        // sem cobrir o texto que vem depois).
         guard let origin = placeCocoa(caretRect: caretRect, elementRect: elementRect,
-                                      bubbleSize: bubbleSize) else { hide(); return }
+                                      bubbleSize: bubbleSize, gap: 6,
+                                      above: !atEnd) else { hide(); return }
 
         label.frame = NSRect(x: hInset, y: vInset, width: size.width, height: size.height)
         panel.setContentSize(bubbleSize)
@@ -76,23 +81,29 @@ final class GhostOverlay {
 
     // MARK: - Posicionamento
 
-    /// Posição (origem Cocoa, bottom-left) do bubble:
-    ///  - cursor válido → À DIREITA do cursor, com folga, centralizado na linha;
-    ///  - senão → abaixo da 1ª linha do campo focado.
-    /// Sempre preso dentro da tela visível.
+    /// Posição (origem Cocoa, bottom-left): à frente do cursor quando há posição
+    /// confiável; senão, junto ao campo focado (apps tipo Electron/navegador que
+    /// não expõem a posição do cursor — melhor mostrar perto do campo que sumir).
+    /// `above`: posicionar ACIMA do cursor (em vez de à frente) — usado quando
+    /// editando no meio do texto ou em apps não-nativos, pra ficar sempre visível
+    /// (mesmo cobrindo a linha de cima) sem cobrir o que vem depois do cursor.
     private func placeCocoa(caretRect: CGRect?, elementRect: CGRect?,
-                            bubbleSize: NSSize) -> NSPoint? {
-        let gap: CGFloat = 10
-        // topCG = borda superior desejada do bubble (coords CG, top-left).
+                            bubbleSize: NSSize, gap: CGFloat, above: Bool) -> NSPoint? {
         var leftCG: CGFloat
         var topCG: CGFloat
-
         if let c = caretRect, isValidCaret(c) {
-            leftCG = c.maxX + gap                       // à frente do cursor
-            topCG = c.midY - bubbleSize.height / 2       // centralizado na linha
+            if above {
+                // Logo ACIMA da linha do cursor (um pouco acima).
+                leftCG = c.minX
+                topCG = c.minY - bubbleSize.height - 3
+            } else {
+                // À frente do cursor, centralizado na linha (fim de linha).
+                leftCG = c.maxX + gap
+                topCG = c.midY - bubbleSize.height / 2
+            }
         } else if let e = elementRect, !e.isEmpty {
-            leftCG = e.minX + 6
-            topCG = min(e.maxY + 2, e.minY + 26)         // abaixo da 1ª linha
+            leftCG = e.minX + 8                          // junto ao campo (sem cursor)
+            topCG = e.minY - bubbleSize.height - 3       // acima do campo
         } else {
             return nil
         }

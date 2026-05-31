@@ -16,8 +16,14 @@ final class SettingsWindowController {
             let hosting = NSHostingController(rootView: view)
             let w = NSWindow(contentViewController: hosting)
             w.title = L.t("Sombra — Preferences", "Sombra — Preferências")
-            w.styleMask = [.titled, .closable]
+            w.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
             w.isReleasedWhenClosed = false
+            // Vidro: janela não-opaca + barra transparente (vibrancy aparece atrás).
+            w.titlebarAppearsTransparent = true
+            w.titleVisibility = .hidden
+            w.isOpaque = false
+            w.backgroundColor = .clear
+            w.setContentSize(NSSize(width: 900, height: 660))   // retangular, maior
             window = w
         }
         NSApp.activate(ignoringOtherApps: true)

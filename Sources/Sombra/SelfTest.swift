@@ -37,8 +37,9 @@ enum SelfTest {
             let sem = DispatchSemaphore(value: 0)
             var result: String?
             let start = Date()
+            let ctx = ProcessInfo.processInfo.environment["SOMBRA_CONTEXT"] ?? ""
             Task {
-                result = await predictor.predict(prefix: prompt, promptContext: "")
+                result = await predictor.predict(prefix: prompt, promptContext: ctx, maxWords: SombraSettings.shared.suggestionWords)
                 sem.signal()
             }
             sem.wait()
