@@ -1,5 +1,6 @@
 import Foundation
 import CLlama
+import os
 
 /// Preditor real: SmolLM2 (GGUF) via llama.cpp com Metal.
 /// As chamadas são serializadas (o contexto llama não é thread-safe).
@@ -13,15 +14,19 @@ final class LlamaPredictor: Predictor {
     private let handle: LlamaHandle           // sombra_ctx*
     private var ctx: OpaquePointer { handle.ctx }
     private let queue = DispatchQueue(label: "com.sombra.llama", qos: .userInitiated)
-    // Janela de contexto curta: autocomplete não precisa de muito, e prefixo
-    // longo = muito processamento de prompt na GPU (calor) em textos grandes.
-    private let maxPrefixChars = 320
+    // Janela de contexto: agora vem de SombraSettings.contextChars (prefixo longo =
+    // mais coerência, mas mais processamento de prompt na GPU / calor).
     /// Modelo instruct/chat (tem template embutido). Tratado via prefill de chat
     /// para CONTINUAR o texto em vez de "responder" como assistente.
     private let isInstruct: Bool
     /// Contador de geração: cada predict() incrementa; gerações antigas (na fila
     /// ou em curso) abortam ao ver um valor mais novo → mata backlog/calor.
     private let genPtr = UnsafeMutablePointer<Int32>.allocate(capacity: 1)
+
+    /// true depois que o pré-aquecimento roda uma inferência de verdade — sinal
+    /// REAL de "pronto" (não só "objeto criado"). Lido pelo motor (poll) p/ o status.
+    private let readyFlag = OSAllocatedUnfairLock(initialState: false)
+    var isReady: Bool { readyFlag.withLock { $0 } }
 
     /// Falha (retorna nil) se o modelo não puder ser carregado.
     init?(modelPath: String, nCtx: Int32 = 2048) {
@@ -36,10 +41,12 @@ final class LlamaPredictor: Predictor {
 
         // Pré-aquece: a 1ª inferência compila os pipelines Metal (~vários seg).
         // Fazemos isso já no carregamento para a 1ª sugestão real ser rápida.
+        let ready = readyFlag
         queue.async { [handle] in
             var buf = [CChar](repeating: 0, count: 32)
             _ = sombra_complete(handle.ctx, "Olá, ", &buf, 32, 6, 2, true, nil, 0)
             NSLog("[Sombra] Modelo pré-aquecido.")
+            ready.withLock { $0 = true }
         }
     }
 
@@ -74,11 +81,12 @@ final class LlamaPredictor: Predictor {
         let maxTokens = words * 6 + 4 // teto de segurança (subpalavras)
         let trimDot = SombraSettings.shared.removeTrailingPeriod
         let isInstruct = self.isInstruct
-        let maxPrefix = self.maxPrefixChars
+        // Janela de contexto configurável (quantos chars antes do cursor enviar).
+        let maxPrefix = SombraSettings.shared.contextChars
         let ctxLower = promptContext.lowercased()
         // Cauda do texto já digitado (minúscula), para detectar quando o modelo
         // REPETE o que você acabou de escrever (eco do próprio corpo).
-        let bodyLower = String(prefix.suffix(maxPrefixChars)).lowercased()
+        let bodyLower = String(prefix.suffix(maxPrefix)).lowercased()
         // Marca esta geração como a mais recente; gerações anteriores abortam.
         genPtr.pointee &+= 1
         let myGen = genPtr.pointee

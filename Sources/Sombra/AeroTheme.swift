@@ -26,16 +26,16 @@ struct VisualEffectBackground: NSViewRepresentable {
     }
 }
 
-/// Fundo das janelas: vibrancy do sistema + gradiente vivo translúcido + brilho.
+/// Fundo das janelas: vidro do sistema + um véu BRANCO translúcido (modo claro)
+/// — o fundo fica branco e a cor vem só das pílulas/botões. No modo escuro o
+/// vidro escuro do sistema aparece (não força branco), pra ficar natural.
 struct AeroBackground: View {
-    var tint: Color = Candy.bondi
+    var tint: Color = Candy.bondi   // mantido por compatibilidade (não tinge o fundo)
+    @Environment(\.colorScheme) private var scheme
     var body: some View {
         ZStack {
             VisualEffectBackground()
-            LinearGradient(colors: [tint.opacity(0.34), Candy.grape.opacity(0.26), Candy.blueberry.opacity(0.30)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
-            LinearGradient(colors: [.white.opacity(0.30), .clear],
-                           startPoint: .top, endPoint: .center)
+            (scheme == .dark ? Color.white.opacity(0.04) : Color.white.opacity(0.60))
         }
         .ignoresSafeArea()
     }
@@ -75,6 +75,44 @@ private struct GlossyButtonBody: View {
             )
             .shadow(color: tint.opacity(0.32), radius: 4, y: 2)
             .brightness(p ? -0.06 : 0)
+            .scaleEffect(p ? 0.97 : 1)
+            .animation(.easeOut(duration: 0.12), value: p)
+    }
+}
+
+extension Color {
+    /// Versão mais escura (mistura com preto) — para texto legível sobre fundos claros.
+    func darkened(_ amount: Double = 0.4) -> Color {
+        let ns = NSColor(self).usingColorSpace(.sRGB) ?? .black
+        let f = 1 - amount
+        return Color(red: Double(ns.redComponent) * f,
+                     green: Double(ns.greenComponent) * f,
+                     blue: Double(ns.blueComponent) * f)
+    }
+}
+
+/// Botão suave para o conteúdo das Preferências: pílula clara com TEXTO ESCURO
+/// (cor da aba escurecida) → bom contraste no modo claro; clara no escuro.
+struct SoftButtonStyle: ButtonStyle {
+    var tint: Color = Candy.blueberry
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.isEnabled) private var enabled
+    func makeBody(configuration: Configuration) -> some View {
+        let p = configuration.isPressed
+        let text = enabled ? (scheme == .dark ? Color.white.opacity(0.92) : tint.darkened(0.45))
+                           : Color.secondary
+        configuration.label
+            .font(.system(size: 12.5, weight: .semibold))
+            .foregroundStyle(text)
+            .padding(.vertical, 5).padding(.horizontal, 12)
+            .background(
+                Capsule()
+                    .fill(tint.opacity(scheme == .dark ? 0.30 : 0.20))
+                    .overlay(Capsule().fill(LinearGradient(colors: [.white.opacity(scheme == .dark ? 0.10 : 0.45), .clear],
+                                                           startPoint: .top, endPoint: .center)))
+                    .overlay(Capsule().strokeBorder(tint.opacity(scheme == .dark ? 0.45 : 0.38), lineWidth: 0.75))
+            )
+            .opacity(p ? 0.7 : 1)
             .scaleEffect(p ? 0.97 : 1)
             .animation(.easeOut(duration: 0.12), value: p)
     }
@@ -133,6 +171,36 @@ private struct GlossyToggleBody: View {
     }
 }
 
+// MARK: - Barra de carregamento glossy (indeterminada)
+
+/// Barra "gel" que varre um brilho da esquerda à direita enquanto o modelo
+/// carrega (o llama.cpp não reporta % real, então é indeterminada). Sem cor =
+/// nenhum modelo; com a cor dada = carregando.
+struct GlossyLoadingBar: View {
+    var color: Color = Candy.lime
+    @State private var phase: CGFloat = -0.6
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            Capsule().fill(color.opacity(0.16))
+                .overlay(
+                    Capsule()
+                        .fill(LinearGradient(colors: [.clear, color.opacity(0.9),
+                                                      .white.opacity(0.85), color.opacity(0.9), .clear],
+                                             startPoint: .leading, endPoint: .trailing))
+                        .frame(width: w * 0.45)
+                        .offset(x: phase * w)
+                )
+                .overlay(Capsule().strokeBorder(color.opacity(0.30), lineWidth: 0.5))
+                .clipShape(Capsule())
+        }
+        .frame(height: 6)
+        .onAppear {
+            withAnimation(.linear(duration: 1.1).repeatForever(autoreverses: false)) { phase = 1.05 }
+        }
+    }
+}
+
 // MARK: - Card de vidro
 
 struct GlassCard: ViewModifier {
@@ -149,7 +217,7 @@ struct GlassCard: ViewModifier {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(.ultraThinMaterial)
                     .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(LinearGradient(colors: [tint.opacity(0.18), .clear],
+                        .fill(LinearGradient(colors: [tint.opacity(0.07), .clear],
                                              startPoint: .top, endPoint: .bottom)))
                     .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .fill(LinearGradient(colors: [.white.opacity(sheen), .clear],

@@ -6,6 +6,7 @@ struct SettingsView: View {
     @ObservedObject var settings = SombraSettings.shared
     @ObservedObject var models = ModelManager.shared
     @ObservedObject var updater = Updater.shared
+    @ObservedObject var status = ModelStatus.shared
     let onReloadModel: () -> Void
 
     @State private var selectedAppId = ""
@@ -43,44 +44,63 @@ struct SettingsView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .glassCard(tint: tabTint, cornerRadius: 18)
+                .glassCard(tint: .clear, cornerRadius: 18)   // painel branco neutro
             }
-            .padding(.top, 40)   // espaço p/ a barra de título transparente + botões
+            .padding(.top, 16)   // bem perto dos botões de fechar (tráfego)
             .padding([.horizontal, .bottom], 16)
         }
         .frame(minWidth: 820, minHeight: 600)
         .tint(tabTint)
+        .buttonStyle(SoftButtonStyle(tint: tabTint))
         .toggleStyle(GlossyToggleStyle())
         .animation(.easeInOut(duration: 0.2), value: tab)
         .onAppear { models.refreshInstalled() }
     }
 
-    /// Barra de abas glossy no topo (opções sempre em cima).
+    /// Barra de abas: pílulas de "gel" (estilo cápsula Advil) — cor translúcida,
+    /// brilho glossy no topo, borda e sombra de relevo. Mesmo a aba inativa mostra
+    /// a pílula (com a cor mais suave), pra ficar claro que são botões.
     private var tabBar: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 7) {
             ForEach(0..<tabs.count, id: \.self) { i in
                 let t = tabs[i]
+                let sel = tab == i
                 Button { tab = i } label: {
                     VStack(spacing: 2) {
-                        Image(systemName: t.2).font(.system(size: 13, weight: .semibold))
+                        Image(systemName: t.2).font(.system(size: 12, weight: .semibold))
                         Text(L.t(t.0, t.1)).font(.system(size: 10, weight: .medium)).lineLimit(1)
                     }
-                    .foregroundStyle(tab == i ? Color.white : Color.primary.opacity(0.75))
-                    .frame(maxWidth: .infinity).padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(tab == i
-                                  ? AnyShapeStyle(LinearGradient(colors: [t.3.opacity(0.85), t.3],
-                                                                 startPoint: .top, endPoint: .bottom))
-                                  : AnyShapeStyle(Color.white.opacity(0.10)))
-                            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                .strokeBorder(.white.opacity(tab == i ? 0.45 : 0.12), lineWidth: 1))
-                    )
-                    .shadow(color: tab == i ? t.3.opacity(0.30) : .clear, radius: 4, y: 2)
+                    .foregroundStyle(sel ? Color.white : Color.primary.opacity(0.85))
+                    .frame(maxWidth: .infinity).padding(.vertical, 5)
+                    .background(gelPill(t.3, selected: sel))
+                    .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }
         }
+    }
+
+    /// Fundo "gel" de uma pílula (cápsula tipo Advil): material translúcido +
+    /// gradiente da cor + brilho glossy no topo + borda NATURAL (a própria cor,
+    /// não branca) + sombra (relevo, "salta" do fundo branco). Inativa = bem mais
+    /// transparente. A borda colorida funciona igual em claro e escuro.
+    private func gelPill(_ color: Color, selected: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 13, style: .continuous)
+        return ZStack {
+            shape.fill(.ultraThinMaterial)
+            shape.fill(LinearGradient(
+                colors: [color.opacity(selected ? 0.95 : 0.20), color.opacity(selected ? 0.66 : 0.08)],
+                startPoint: .top, endPoint: .bottom))
+            // Brilho no topo (a "luz" da cápsula) — é isto que ilumina, não a borda.
+            shape.fill(LinearGradient(
+                colors: [.white.opacity(selected ? 0.6 : 0.35), .clear],
+                startPoint: .top, endPoint: .center))
+            // Borda = a própria cor (natural), não branca.
+            shape.strokeBorder(color.opacity(selected ? 0.9 : 0.45), lineWidth: selected ? 1 : 0.75)
+        }
+        .compositingGroup()
+        .shadow(color: color.opacity(selected ? 0.42 : 0.16), radius: selected ? 6 : 3, y: selected ? 2 : 1)
+        .shadow(color: .black.opacity(0.12), radius: 1.5, y: 0.5)
     }
 
     private var activePath: String { ModelLocator.find() ?? "" }
@@ -143,12 +163,7 @@ struct SettingsView: View {
     private var modelTab: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                Text(L.t("Active model", "Modelo ativo"))
-                    .font(.headline)
-                Text((activePath as NSString).lastPathComponent.isEmpty
-                     ? L.t("None (using heuristic)", "Nenhum (usando heurístico)")
-                     : (activePath as NSString).lastPathComponent)
-                    .font(.callout).foregroundStyle(.secondary)
+                modelStatusHeader
 
                 Divider()
                 Text(L.t("Available", "Disponíveis")).font(.subheadline).bold()
@@ -161,10 +176,14 @@ struct SettingsView: View {
                     modelRow(url: url, deletable: true, label: nil)
                 }
 
-                HStack {
+                HStack(spacing: 8) {
                     Button(L.t("Import .gguf…", "Importar .gguf…")) { importModel() }
+                    Button {
+                        models.refreshInstalled()
+                    } label: { Label(L.t("Refresh", "Atualizar"), systemImage: "arrow.clockwise") }
+                        .help(L.t("Re-scan the models folder", "Reler a pasta de modelos"))
                     Spacer()
-                    Button(L.t("Open models folder", "Abrir pasta de modelos")) { NSWorkspace.shared.open(ModelManager.modelsDir) }
+                    Button(L.t("Open folder", "Abrir pasta")) { NSWorkspace.shared.open(ModelManager.modelsDir) }
                 }
                 .padding(.top, 2)
 
@@ -179,21 +198,106 @@ struct SettingsView: View {
         }
     }
 
+    /// Cabeçalho com o status GLOBAL real do modelo: luz (verde pronto+acessível /
+    /// laranja carregando ou sem acessibilidade / vermelho sem modelo) + barra
+    /// glossy que segue o carregamento até ficar verde; "sem cor" quando não há
+    /// modelo ativo.
+    private var modelStatusHeader: some View {
+        let ax = Permissions.hasAccessibility
+        let hasModel = !(activePath as NSString).lastPathComponent.isEmpty
+        let light: Color
+        let text: String
+        if !hasModel {
+            light = .red; text = L.t("No model active", "Nenhum modelo ativo")
+        } else {
+            switch status.state {
+            case .ready:
+                light = ax ? .green : .orange
+                text = ax ? L.t("Active", "Ativo")
+                          : L.t("Ready — grant Accessibility", "Pronto — falta Acessibilidade")
+            case .loading: light = .orange; text = L.t("Loading…", "Carregando…")
+            case .unloaded: light = Color.secondary; text = L.t("Unloaded (idle)", "Descarregado (ocioso)")
+            case .none: light = .red; text = L.t("Not loaded", "Não carregado")
+            }
+        }
+        return VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 9) {
+                Circle().fill(light).frame(width: 13, height: 13)
+                    .overlay(Circle().strokeBorder(.white.opacity(0.5), lineWidth: 0.5))
+                    .shadow(color: light.opacity(0.75), radius: 4)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(L.t("Active model", "Modelo ativo")).font(.headline)
+                    Text(hasModel ? (activePath as NSString).lastPathComponent
+                                  : L.t("None (using heuristic)", "Nenhum (usando heurístico)"))
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(text).font(.caption)
+                    .foregroundStyle(light == .green ? Color.green : (light == .red ? Color.red : Color.secondary))
+            }
+            // Barra: animada/colorida carregando; verde cheia quando pronto; sem cor senão.
+            if status.state == .loading {
+                GlossyLoadingBar(color: .orange)
+            } else if hasModel && status.state == .ready && ax {
+                Capsule().fill(LinearGradient(colors: [Color.green.opacity(0.8), .green],
+                                              startPoint: .leading, endPoint: .trailing))
+                    .frame(height: 6)
+                    .overlay(Capsule().fill(LinearGradient(colors: [.white.opacity(0.45), .clear],
+                                                           startPoint: .top, endPoint: .center)))
+            } else {
+                Capsule().fill(Color.secondary.opacity(0.12)).frame(height: 6)
+            }
+        }
+    }
+
     private func modelRow(url: URL, deletable: Bool, label: String?) -> some View {
-        let isActive = url.path == activePath
-        return HStack(spacing: 8) {
-            Image(systemName: isActive ? "largecircle.fill.circle" : "circle")
-                .foregroundStyle(isActive ? Color.accentColor : Color.secondary)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(url.lastPathComponent).font(.callout)
-                if let label { Text(label).font(.caption2).foregroundStyle(.secondary) }
+        // "Escolhido" = é o modelo que o MOTOR carrega (ModelLocator). O estado
+        // (verde/laranja/vermelho) reflete o que o motor REALMENTE fez — não o
+        // caminho salvo. Verde só com o modelo pronto E a Acessibilidade ativa.
+        let isChosen = (url.path == activePath)
+        let ax = Permissions.hasAccessibility
+        let light: Color
+        let statusText: String?
+        let loading: Bool
+        if isChosen {
+            switch status.state {
+            case .ready:
+                light = ax ? .green : .orange
+                statusText = ax ? L.t("Active", "Ativo")
+                                : L.t("Ready — grant Accessibility", "Pronto — falta Acessibilidade")
+                loading = false
+            case .loading:
+                light = .orange; statusText = L.t("Loading…", "Carregando…"); loading = true
+            case .unloaded:
+                light = Color.secondary.opacity(0.5); statusText = L.t("Unloaded (idle)", "Descarregado (ocioso)"); loading = false
+            case .none:
+                light = .red; statusText = L.t("Not loaded", "Não carregado"); loading = false
+            }
+        } else {
+            light = Color.secondary.opacity(0.35); statusText = nil; loading = false
+        }
+        let glow = (light == .green || light == .orange || light == .red)
+        return HStack(spacing: 10) {
+            Circle().fill(light).frame(width: 11, height: 11)
+                .overlay(Circle().strokeBorder(.white.opacity(0.5), lineWidth: 0.5))
+                .shadow(color: glow ? light.opacity(0.7) : .clear, radius: 3)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(url.lastPathComponent).font(.callout).fontWeight(isChosen ? .semibold : .regular)
+                if let label {
+                    Text(label).font(.caption2).foregroundStyle(.secondary)
+                } else if let statusText {
+                    Text(statusText).font(.caption2)
+                        .foregroundStyle(light == .green ? Color.green : (light == .red ? Color.red : Color.secondary))
+                }
             }
             Spacer()
-            if !isActive {
-                Button(L.t("Use", "Usar")) { settings.modelPath = url.path; onReloadModel() }
+            if !isChosen {
+                Button(L.t("Activate", "Ativar")) { settings.modelPath = url.path; onReloadModel() }
+            } else if !loading {
+                Button(L.t("Active", "Ativo")) {}.disabled(true)
             }
             if deletable {
-                Button {
+                Button(role: .destructive) {
                     if url.path == activePath { settings.modelPath = "" }
                     models.remove(url)
                     onReloadModel()
@@ -201,9 +305,8 @@ struct SettingsView: View {
                     .help(L.t("Delete this model", "Apagar este modelo"))
             }
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 4)
         .contentShape(Rectangle())
-        .onTapGesture { settings.modelPath = url.path; onReloadModel() }
     }
 
     private func catalogRow(_ m: CatalogModel) -> some View {
@@ -350,6 +453,19 @@ struct SettingsView: View {
                      "0 = sempre a palavra mais provável (estável, pode ficar genérico). Maior = mais natural e contextual, mas pode divagar. 0.6 recomendado."))
                 .font(.caption).foregroundStyle(.secondary)
 
+            VStack(alignment: .leading) {
+                Text(L.t("Context window", "Janela de contexto"))
+                Picker("", selection: $settings.contextChars) {
+                    Text(L.t("Short", "Curta")).tag(320)
+                    Text(L.t("Medium", "Média")).tag(700)
+                    Text(L.t("Large", "Longa")).tag(1200)
+                }
+                .pickerStyle(.segmented).labelsHidden()
+            }
+            Text(L.t("How much text before the cursor goes to the model. Short (~320 chars) = fastest & coolest; Large (~1200) = better coherence in long text (emails, notes), but slower and hotter.",
+                     "Quanto texto antes do cursor vai ao modelo. Curta (~320) = mais rápido e frio; Longa (~1200) = mais coerência em textos longos (e-mails, notas), porém mais lento e quente."))
+                .font(.caption).foregroundStyle(.secondary)
+
             Divider()
             Text(L.t("Shortcuts", "Atalhos")).font(.subheadline).bold()
 
@@ -411,6 +527,19 @@ struct SettingsView: View {
                          "Opacidade: \(Int(settings.ghostA * 100))%"))
                 Slider(value: $settings.ghostA, in: 0.2...1.0)
             }
+
+            Divider()
+            Text(L.t("Position in Electron apps", "Posição em apps Electron")).font(.headline)
+            Text(L.t("In Electron/Chromium apps (Claude, VS Code, Slack…) macOS doesn't expose the cursor reliably, so the suggestion is placed relative to the field.",
+                     "Em apps Electron/Chromium (Claude, VS Code, Slack…) o macOS não expõe o cursor de forma confiável, então a sugestão é posicionada em relação ao campo."))
+                .font(.caption).foregroundStyle(.secondary)
+            Picker("", selection: $settings.electronGhostPosition) {
+                Text(L.t("Above field", "Acima do campo")).tag(0)
+                Text(L.t("Below field", "Abaixo do campo")).tag(1)
+                Text(L.t("Window corner", "Canto da janela")).tag(2)
+                Text(L.t("Hidden", "Ocultar")).tag(3)
+            }
+            .pickerStyle(.segmented).labelsHidden()
 
             Divider()
             Text(L.t("Menu bar icon", "Ícone na barra de menu")).font(.headline)

@@ -1,5 +1,18 @@
 import AppKit
 import os
+import Combine
+
+/// Estado REAL do modelo. `.ready` só após o pré-aquecimento (o modelo de fato
+/// rodou uma inferência) — não é "memória" do último caminho salvo.
+enum ModelState { case none, loading, ready, unloaded }
+
+/// Fonte única e observável do estado do modelo, para a GUI (aba Modelos) e a
+/// barra de menu refletirem o que o MOTOR realmente carregou — não o caminho salvo.
+@MainActor
+final class ModelStatus: ObservableObject {
+    static let shared = ModelStatus()
+    @Published var state: ModelState = .none
+}
 
 /// Orquestra todo o ciclo:
 ///   ler texto focado -> (debounce) -> prever -> mostrar sombra -> aceitar no Tab.
@@ -24,6 +37,16 @@ final class SuggestionEngine {
     /// Notifica a UI quando o modelo ativo muda (para atualizar o menu).
     var onModelChanged: (() -> Void)?
 
+    /// Estado REAL do modelo (espelhado em `ModelStatus.shared` para a GUI).
+    private(set) var modelState: ModelState = .none {
+        didSet {
+            if modelState != oldValue {
+                ModelStatus.shared.state = modelState
+                onModelChanged?()
+            }
+        }
+    }
+
     init() {
         if let path = ModelLocator.find(), let llama = LlamaPredictor(modelPath: path) {
             predictor = llama
@@ -33,6 +56,7 @@ final class SuggestionEngine {
             modelDescription = L.t("Heuristic (no model)", "Heurístico (sem modelo)")
             NSLog("[Sombra] Modelo .gguf não encontrado — usando preditor heurístico.")
         }
+        modelState = (predictor is LlamaPredictor) ? .loading : .none
         predictor.setTemperature(SombraSettings.shared.modelTemperature)
     }
 
@@ -52,7 +76,16 @@ final class SuggestionEngine {
         predictor = HeuristicPredictor()   // libera o LlamaPredictor (deinit → free)
         modelUnloaded = true
         modelDescription = L.t("Unloaded (idle)", "Descarregado (ocioso)")
+        modelState = .unloaded
         onModelChanged?()
+    }
+
+    /// Promove .loading → .ready quando o pré-aquecimento do modelo termina
+    /// (checagem real: o modelo rodou uma inferência). Chamado pelo poll timer.
+    private func refreshModelState() {
+        guard modelState == .loading,
+              let llama = predictor as? LlamaPredictor, llama.isReady else { return }
+        modelState = .ready
     }
 
     func reloadModel() {
@@ -61,6 +94,7 @@ final class SuggestionEngine {
         isReloading = true
         let path = ModelLocator.find()
         modelDescription = L.t("Loading…", "Carregando…")
+        modelState = .loading
         onModelChanged?()
         // Cancela e descarta o preditor atual ANTES de carregar o novo, para não
         // manter dois contextos vivos simultaneamente.
@@ -82,6 +116,7 @@ final class SuggestionEngine {
                 self.predictor = newPredictor
                 self.predictor.setTemperature(SombraSettings.shared.modelTemperature)
                 self.modelDescription = desc
+                self.modelState = (newPredictor is LlamaPredictor) ? .loading : .none
                 self.dismissGhost()
                 self.lastPrefix = ""
                 self.isReloading = false
@@ -95,6 +130,9 @@ final class SuggestionEngine {
     private var inFlight: Task<Void, Never>?
 
     private var lastPrefix: String = ""
+    // "Consumindo" uma sugestão multi-palavra: enquanto você aceita palavra por
+    // palavra (Tab), mantemos o RESTO da mesma sugestão sem regenerar.
+    private var consuming = false
     private var currentSuffix: String = "" { // sufixo atualmente mostrado na sombra
         didSet {
             let has = !currentSuffix.isEmpty
@@ -189,6 +227,7 @@ final class SuggestionEngine {
                     // Acorda o modelo se foi descarregado por ociosidade.
                     if self.modelUnloaded { self.modelUnloaded = false; self.reloadModel() }
                     self.armed = true   // o usuário digitou: a partir daqui pode sugerir
+                    self.consuming = false   // digitou → sai do modo "consumindo sugestão"
                     if !self.currentSuffix.isEmpty { self.dismissGhost() }
                     self.scheduleEvaluate()
                 }
@@ -199,7 +238,7 @@ final class SuggestionEngine {
         // Timer LENTO só de segurança: pega mudanças sem teclado (cursor movido
         // pelo mouse, troca de campo/app). A avaliação rápida é orientada a evento.
         pollTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.checkIdleUnload(); self?.tick() }
+            MainActor.assumeIsolated { self?.refreshModelState(); self?.checkIdleUnload(); self?.tick() }
         }
         NSLog("[Sombra] Motor iniciado. Acessibilidade: \(Permissions.hasAccessibility)")
     }
@@ -324,18 +363,15 @@ final class SuggestionEngine {
         // Personalização (modo "guardar tudo"): aprende com o que você digita.
         recordWritingIfEnabled(focus.prefix)
 
-        // Sugere quando o cursor está numa FRONTEIRA de palavra: fim do texto,
-        // ou o caractere seguinte não é letra/dígito (espaço, pontuação, quebra).
-        // Assim também funciona ao voltar e editar no meio do texto.
+        // Sugere quando o cursor NÃO está DENTRO de uma palavra. "Dentro" = o
+        // caractere ANTERIOR E o SEGUINTE são alfanuméricos (ex.: "wor|d"). No
+        // começo de uma linha/palavra (anterior é \n/espaço/pontuação), sugerimos
+        // mesmo que o próximo seja letra — corrige a linha do meio entre dois
+        // textos, que antes só funcionava com linhas em branco em volta.
         let atTextEnd = focus.length < 0 || focus.caret >= focus.length
-        let boundary: Bool
-        if atTextEnd {
-            boundary = true
-        } else if let nc = focus.nextChar {
-            boundary = !(nc.isLetter || nc.isNumber)
-        } else {
-            boundary = true
-        }
+        let prevAlnum = focus.prefix.last.map { $0.isLetter || $0.isNumber } ?? false
+        let nextAlnum = focus.nextChar.map { $0.isLetter || $0.isNumber } ?? false
+        let boundary = atTextEnd || !(prevAlnum && nextAlnum)
         guard boundary else { dismissGhost(); return }
 
         // Fim da linha/texto? (nada depois do cursor na linha) → sombra à frente.
@@ -343,6 +379,21 @@ final class SuggestionEngine {
         lastAtEnd = atTextEnd || (focus.nextChar.map { $0 == "\n" || $0 == "\r" } ?? true)
 
         let prefix = focus.prefix
+
+        // Sugestão "grudada": enquanto você ACEITA palavra por palavra (Tab), o
+        // cursor avança mas mantemos o RESTO da MESMA sugestão — sem regenerar
+        // (senão a frase muda no meio). Sai deste modo ao digitar (onOtherKey zera
+        // `consuming`) ou ao consumir tudo (rest vazio).
+        if consuming, !currentSuffix.isEmpty,
+           prefix == lastPrefix || prefix.hasPrefix(lastPrefix) || lastPrefix.hasPrefix(prefix) {
+            lastPrefix = prefix
+            overlay.show(suffix: currentSuffix, caretRect: lastCaretRect,
+                         elementRect: lastElementRect, isCorrection: mode == .correction,
+                         atEnd: lastAtEnd, correction: mode == .correction ? correction : nil)
+            return
+        }
+        consuming = false
+
         guard prefix != lastPrefix else {
             // Mesmo prefixo: só reposiciona a sombra (cursor pode ter movido).
             if !currentSuffix.isEmpty {
@@ -585,6 +636,10 @@ final class SuggestionEngine {
         TextInjector.insert(word)
         lastPrefix += word
         currentSuffix = rest
+        // Entra em modo "consumindo": enquanto você aceita palavra por palavra,
+        // mantemos o RESTO da MESMA sugestão (sem regenerar → a frase não muda no
+        // meio). Sai ao digitar (onOtherKey zera) ou ao consumir tudo.
+        consuming = !rest.isEmpty
 
         // Personalização: a palavra que você ACEITOU é um sinal forte de preferência.
         if SombraSettings.shared.personalizeEnabled,
@@ -627,6 +682,7 @@ final class SuggestionEngine {
         currentSuffix = ""
         correction = nil
         emojiReplace = nil
+        consuming = false
         mode = .autocomplete
         overlay.hide()
     }

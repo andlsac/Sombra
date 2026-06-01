@@ -127,8 +127,17 @@ final class GhostOverlay {
                 topCG = c.midY - bubbleSize.height / 2
             }
         } else if let e = elementRect, !e.isEmpty {
-            leftCG = e.minX + 8                          // junto ao campo (sem cursor)
-            topCG = e.minY - bubbleSize.height - 3       // acima do campo
+            // Apps Electron/Chromium (cursor impreciso): posição escolhida pelo usuário.
+            switch SombraSettings.shared.electronGhostPosition {
+            case 1: // abaixo do campo
+                leftCG = e.minX + 8; topCG = e.maxY + 3
+            case 2: // canto superior direito do campo/janela
+                leftCG = e.maxX - bubbleSize.width - 6; topCG = e.minY + 4
+            case 3: // ocultar a sombra nesses apps
+                return nil
+            default: // 0 = acima do campo (padrão)
+                leftCG = e.minX + 8; topCG = e.minY - bubbleSize.height - 3
+            }
         } else {
             return nil
         }

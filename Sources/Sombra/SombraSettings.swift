@@ -96,6 +96,14 @@ final class SombraSettings: ObservableObject {
     @Published var emojiGender: Int { didSet { d.set(emojiGender, forKey: K.emojiGender) } }
     @Published var emojiSkinTone: Int { didSet { d.set(emojiSkinTone, forKey: K.emojiSkin) } }
 
+    // Janela de contexto: quantos caracteres do texto ANTES do cursor são enviados
+    // ao modelo. Mais = mais coerência em textos longos; menos = mais rápido/frio.
+    @Published var contextChars: Int { didSet { d.set(contextChars, forKey: K.ctxChars) } }
+
+    // Posição da sombra em apps Electron/Chromium (onde o cursor é impreciso):
+    // 0 = acima do campo, 1 = abaixo, 2 = canto da janela, 3 = ocultar.
+    @Published var electronGhostPosition: Int { didSet { d.set(electronGhostPosition, forKey: K.electronPos) } }
+
     // Mostrar o app no Dock (padrão: só na barra de menu).
     @Published var showInDock: Bool {
         didSet { d.set(showInDock, forKey: K.dock); NotificationCenter.default.post(name: .sombraDockChanged, object: nil) }
@@ -126,6 +134,7 @@ final class SombraSettings: ObservableObject {
         static let autoUpd = "autoCheckUpdates", askedUpd = "hasAskedAutoUpdate"
         static let screenCtx = "useScreenContext"
         static let emojiOn = "emojiSuggestionsEnabled", emojiGender = "emojiGender", emojiSkin = "emojiSkinTone"
+        static let ctxChars = "contextChars", electronPos = "electronGhostPosition"
         static let inline = "inlineGhost", unload = "unloadIdleMinutes"
         static let acceptAllKey = "acceptAllKeyCode", acceptAllMods = "acceptAllModifiers", acceptAllLabel = "acceptAllKeyLabel"
         static let r = "ghostR", g = "ghostG", b = "ghostB", a = "ghostA"
@@ -163,6 +172,8 @@ final class SombraSettings: ObservableObject {
         emojiSuggestionsEnabled = d.object(forKey: K.emojiOn) as? Bool ?? true  // só dispara após ":"
         emojiGender = d.object(forKey: K.emojiGender) as? Int ?? 0   // 0 = neutro
         emojiSkinTone = d.object(forKey: K.emojiSkin) as? Int ?? 0   // 0 = nenhum (amarelo)
+        contextChars = min(max(d.object(forKey: K.ctxChars) as? Int ?? 320, 120), 1600)
+        electronGhostPosition = d.object(forKey: K.electronPos) as? Int ?? 0
         // Padrão: cinza discreto. O usuário pode deixar vivo.
         ghostR = d.object(forKey: K.r) as? Double ?? 0.50
         ghostG = d.object(forKey: K.g) as? Double ?? 0.50

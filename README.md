@@ -11,14 +11,15 @@
 </p>
 
 <p align="center">
-  <img src="assets/preferences.jpg" alt="Sombra — model picker (glossy Frutiger Aero theme)" width="640"><br>
-  <em>Pick &amp; download a model — glossy “Frutiger Aero” theme (translucent glass, vivid colors).</em>
+  <img src="assets/preferences.jpg" alt="Sombra — Models tab with live status (glossy Frutiger Aero)" width="640"><br>
+  <em>Models tab — pick/activate models with a <strong>live status light + loading bar</strong>; glossy “Frutiger Aero” gel pills.</em>
 </p>
 
 <p align="center">
-  <img src="assets/behavior.jpg" alt="Sombra — Behavior settings" width="320">
+  <img src="assets/behavior.jpg" alt="Sombra — Behavior: temperature & context window" width="320">
   &nbsp;
-  <img src="assets/appearance.jpg" alt="Sombra — Appearance settings" width="320">
+  <img src="assets/writing.jpg" alt="Sombra — Writing: per-model AI instructions" width="320"><br>
+  <em>Behavior (temperature &amp; context window) · Writing (per-model AI instructions).</em>
 </p>
 
  [English](#english) · [Português](#português)
@@ -80,6 +81,9 @@ the last word. Inspired by other apps of the genre, such as
 - **Presence indicator** — a small Sombra badge sits at the top-right of the
   focused window so you know it's active. Text suggestions appear only **after
   you start typing**, never the instant a field gets focus.
+- **Model status at a glance** — a real status light (loading / ready / none) in
+  the menu bar and the Models tab, with a loading bar and one-click **Reload model**.
+  Accepting word-by-word keeps the **same coherent phrase** (no mid-phrase changes).
 - **Screen context (OCR)** — optional: detects the app/page (email, browser,
   Reddit, GitHub…) and reads visible text so suggestions fit the context. Opt-in
   (asks for Screen Recording); off by default.
@@ -188,6 +192,10 @@ do cursor. Você aceita apertando **Tab**.
   Slack…). *Obs.:* nesses, a posição do cursor é imprecisa (limitação do macOS).
 - **Indicador de presença** — um pequeno badge da Sombra no canto da janela em
   foco. As sugestões só aparecem **depois que você começa a digitar**.
+- **Status do modelo à vista** — uma luz de status real (carregando / pronto /
+  nenhum) na barra de menu e na aba Modelos, com barra de carregamento e
+  **Recarregar modelo** num clique. Aceitar palavra por palavra mantém a **mesma
+  frase coerente** (sem trocar no meio).
 - **Contexto da tela (OCR)** — opcional: detecta o app/página (email, navegador,
   Reddit, GitHub…) e lê o texto visível pra sugestões mais no contexto. Opt-in
   (pede Gravação de Tela); desligado por padrão.

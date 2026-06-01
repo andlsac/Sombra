@@ -31,6 +31,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             MainActor.assumeIsolated { self?.applyDockPolicy() }
         }
         SettingsWindowController.shared.onReloadModel = { [weak engine] in engine?.reloadModel() }
+        // Mantém o status (luz do modelo) em dia quando o estado muda.
+        engine.onModelChanged = { [weak self] in MainActor.assumeIsolated { self?.rebuildMenu() } }
         rebuildMenu()
     }
 
@@ -104,9 +106,28 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         axItem.target = self
         menu.addItem(axItem)
 
+        // Status REAL do modelo (luz colorida). `.ready` só após o pré-aquecimento.
+        let dot: String, statusLabel: String
+        switch engine.modelState {
+        case .ready:    dot = "🟢"; statusLabel = L.t("Model ready", "Modelo pronto")
+        case .loading:  dot = "🟠"; statusLabel = L.t("Loading model…", "Carregando modelo…")
+        case .unloaded: dot = "⚪️"; statusLabel = L.t("Unloaded (idle)", "Descarregado (ocioso)")
+        case .none:     dot = "🔴"; statusLabel = L.t("No model (heuristic)", "Sem modelo (heurístico)")
+        }
+        let status = NSMenuItem(title: "\(dot) \(statusLabel)", action: nil, keyEquivalent: "")
+        status.isEnabled = false
+        menu.addItem(status)
+
         let model = NSMenuItem(title: L.t("Model: \(engine.modelDescription)", "Modelo: \(engine.modelDescription)"), action: nil, keyEquivalent: "")
         model.isEnabled = false
         menu.addItem(model)
+
+        // Recarregar o modelo sem precisar fechar/abrir o app (recuperação).
+        let reload = NSMenuItem(title: L.t("Reload model", "Recarregar modelo"),
+                                action: #selector(reloadModel), keyEquivalent: "r")
+        reload.target = self
+        reload.isEnabled = (engine.modelState != .loading)
+        menu.addItem(reload)
 
         let prefs = NSMenuItem(title: L.t("Preferences…", "Preferências…"), action: #selector(openPreferences), keyEquivalent: ",")
         prefs.target = self
@@ -138,6 +159,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             s.appNames[bid] = currentAppName
             s.blockedApps.append(bid)
         }
+    }
+
+    @objc private func reloadModel() {
+        engine.reloadModel()
+        rebuildMenu()
     }
 
     @objc private func openPreferences() {

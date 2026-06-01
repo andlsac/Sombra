@@ -13,31 +13,38 @@ enum EmojiCatalog {
     }
 
     /// Emoji para uma consulta (minúscula), aplicando gênero/tom de pele.
-    /// Prioridade: alias inglês exato > tag exata > apelido PT exato > prefixo de
-    /// alias > prefixo de tag > prefixo de apelido PT. Os apelidos PT mapeiam para
-    /// o alias inglês canônico (ex.: "festa" -> tada 🎉, "fogo" -> fire 🔥).
+    /// Prioridade: alias inglês exato > tag exata > apelido localizado (PT/DE)
+    /// exato > prefixo de alias > prefixo de tag > prefixo de apelido localizado.
+    /// Os apelidos PT/DE mapeiam para o alias inglês canônico (ex.: "festa"/"feier"
+    /// -> tada 🎉, "fogo"/"feuer" -> fire 🔥).
     @MainActor
     static func emoji(forQuery q: String) -> String? {
         guard !items.isEmpty else { return nil }
         if let i = aliasExact[q] ?? tagExact[q] { return resolve(items[i]) }
-        if let i = ptIndex(exact: q) { return resolve(items[i]) }
+        if let i = localeExact(q) { return resolve(items[i]) }
         if let i = bestPrefix(q) { return resolve(items[i]) }
-        if let i = ptIndex(prefix: q) { return resolve(items[i]) }
+        if let i = localePrefix(q) { return resolve(items[i]) }
         return nil
     }
 
-    /// Resolve um apelido PT (sem acento) para o índice do emoji do alias inglês.
-    private static func ptIndex(exact q: String) -> Int? {
-        guard let en = ptAliases[fold(q)] else { return nil }
-        return aliasExact[en] ?? tagExact[en]
+    // Apelidos localizados (PT + DE), sem acento. Resolvem para o alias inglês.
+    private static let localeMaps: [[String: String]] = [ptAliases, deAliases]
+
+    private static func localeExact(_ q: String) -> Int? {
+        let f = fold(q)
+        for map in localeMaps {
+            if let en = map[f], let i = aliasExact[en] ?? tagExact[en] { return i }
+        }
+        return nil
     }
-    private static func ptIndex(prefix q: String) -> Int? {
+    private static func localePrefix(_ q: String) -> Int? {
         let fq = fold(q)
         guard fq.count >= 2 else { return nil }
-        // Menor apelido PT que começa com a consulta.
         var best: (alias: String, len: Int)?
-        for (pt, en) in ptAliases where pt.hasPrefix(fq) {
-            if best == nil || pt.count < best!.len { best = (en, pt.count) }
+        for map in localeMaps {
+            for (k, en) in map where k.hasPrefix(fq) {
+                if best == nil || k.count < best!.len { best = (en, k.count) }
+            }
         }
         guard let en = best?.alias else { return nil }
         return aliasExact[en] ?? tagExact[en]
@@ -120,6 +127,50 @@ enum EmojiCatalog {
         "reza": "pray", "rezar": "pray", "obrigado": "pray", "porfavor": "pray", "forca": "muscle",
         "musculo": "muscle", "academia": "muscle", "aceno": "wave", "tchau": "wave", "ola": "wave",
         "joia": "ok_hand", "programador": "technologist", "programadora": "technologist",
+        // extras
+        "fogos": "fireworks", "fogosdeartificio": "fireworks", "comida": "pizza",
+        "hamburguer": "hamburger", "bebida": "beer", "vinho": "wine_glass",
+        "carro": "car", "aviao": "airplane", "casa": "house", "trabalho": "briefcase",
+        "computador": "computer", "telefone": "telephone", "celular": "iphone",
+        "email": "email", "mensagem": "speech_balloon", "sino": "bell", "alarme": "alarm_clock",
+        "calendario": "calendar", "anotacao": "memo", "lapis": "pencil2", "caneta": "pen",
+        "cerebro": "brain", "olhos": "eyes", "olhar": "eyes", "piscar": "wink",
+        "abraco": "hugs", "suor": "sweat_smile", "sono": "sleeping", "dormindo": "sleeping",
+        "medo": "scream", "assustado": "scream", "nojo": "nauseated_face", "vomito": "nauseated_face",
+        "anjo": "innocent", "diabo": "smiling_imp", "palhaco": "clown_face", "alien": "alien",
+        "cem": "100", "nota": "musical_note", "sol": "sunny", "guardachuva": "umbrella",
+        "boneco": "snowman", "arvorenatal": "christmas_tree", "natal": "christmas_tree",
+        "maos": "raised_hands", "louvor": "raised_hands", "soco": "punch", "punho": "fist",
+        "ok": "ok_hand", "estrelinha": "star2", "brilho": "sparkles", "magia": "sparkles",
+        "gato": "cat", "cachorro": "dog", "peixe": "fish", "passaro": "bird", "flor": "cherry_blossom",
+    ]
+
+    /// Apelidos em alemão (sem acento) -> alias inglês canônico do gemoji.
+    /// Permite digitar `:feuer`, `:herz`, `:danke`… além dos nomes em inglês.
+    private static let deAliases: [String: String] = [
+        "feuer": "fire", "rakete": "rocket", "herz": "heart", "liebe": "heart",
+        "feuerwerk": "fireworks", "party": "tada", "feier": "tada", "feiern": "tada",
+        "daumenhoch": "+1", "daumenrunter": "-1", "klatschen": "clap", "applaus": "clap",
+        "lachen": "joy", "weinen": "sob", "traurig": "cry", "wuetend": "rage", "boese": "angry",
+        "gluecklich": "smile", "freude": "smile", "froh": "smile", "kuss": "kissing_heart",
+        "denken": "thinking", "nachdenken": "thinking", "sonnenbrille": "sunglasses",
+        "totenkopf": "skull", "geist": "ghost", "roboter": "robot", "kacke": "poop",
+        "kaffee": "coffee", "bier": "beer", "wein": "wine_glass", "kuchen": "birthday",
+        "geschenk": "gift", "geld": "moneybag", "stern": "star", "blitz": "zap",
+        "richtig": "white_check_mark", "fertig": "white_check_mark", "falsch": "x",
+        "achtung": "warning", "warnung": "warning", "frage": "question", "idee": "bulb",
+        "ziel": "dart", "pokal": "trophy", "medaille": "1st_place_medal", "musik": "musical_note",
+        "foto": "camera", "video": "movie_camera", "schluessel": "key", "schloss": "lock",
+        "muell": "wastebasket", "uhr": "alarm_clock", "buch": "books", "sonne": "sunny",
+        "mond": "crescent_moon", "regen": "cloud_with_rain", "schnee": "snowflake",
+        "baum": "deciduous_tree", "blume": "cherry_blossom", "regenbogen": "rainbow",
+        "hund": "dog", "katze": "cat", "schlange": "snake", "loewe": "lion",
+        "beten": "pray", "danke": "pray", "bitte": "pray", "muskel": "muscle",
+        "winken": "wave", "tschuess": "wave", "hallo": "wave", "programmierer": "technologist",
+        "computer": "computer", "telefon": "telephone", "handy": "iphone", "auto": "car",
+        "gehirn": "brain", "augen": "eyes", "zwinkern": "wink", "umarmung": "hugs",
+        "schlafen": "sleeping", "angst": "scream", "engel": "innocent", "gehirnschmalz": "brain",
+        "haus": "house", "essen": "pizza", "glocke": "bell", "schneemann": "snowman",
     ]
 
     /// Variantes de gênero para os emojis de pessoa mais comuns (chave = emoji
