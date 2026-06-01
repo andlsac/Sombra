@@ -13,11 +13,15 @@ protocol Predictor: AnyObject {
     /// Personalização: favorece as palavras dadas com um bônus em logits.
     /// `strength` <= 0 ou lista vazia remove o viés.
     func setBias(words: [String], strength: Float)
+
+    /// Temperatura de amostragem (0 = greedy/determinístico; >0 = mais natural).
+    func setTemperature(_ temperature: Double)
 }
 
 extension Predictor {
-    // Padrão: sem personalização (ex.: HeuristicPredictor).
+    // Padrão: sem personalização nem temperatura (ex.: HeuristicPredictor).
     func setBias(words: [String], strength: Float) {}
+    func setTemperature(_ temperature: Double) {}
 }
 
 /// Placeholder determinístico para validar o loop ponta-a-ponta.

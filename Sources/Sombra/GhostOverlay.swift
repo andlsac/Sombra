@@ -46,16 +46,24 @@ final class GhostOverlay {
     /// abaixo do campo focado (`elementRect`). Retângulos em coords de tela
     /// (origem no canto superior esquerdo do display principal).
     func show(suffix: String, caretRect: CGRect?, elementRect: CGRect?,
-              isCorrection: Bool = false, atEnd: Bool = true) {
+              isCorrection: Bool = false, atEnd: Bool = true,
+              correction: (wrong: String, right: String)? = nil) {
         guard !suffix.isEmpty else { hide(); return }
 
-        // Correção ortográfica em laranja; autocomplete na cor configurável.
-        label.textColor = isCorrection ? NSColor.systemOrange : SombraSettings.shared.nsGhostColor
         bubble.layer?.backgroundColor = NSColor.textBackgroundColor.withAlphaComponent(0.96).cgColor
         bubble.layer?.borderColor = NSColor.separatorColor.cgColor
         panel.hasShadow = true
 
-        label.stringValue = suffix
+        if let c = correction {
+            // Correção: a palavra errada RISCADA em vermelho + a correção em verde
+            // escuro (ex.: "~~teh~~  the").
+            label.attributedStringValue = Self.correctionText(wrong: c.wrong, right: c.right,
+                                                              font: label.font ?? NSFont.systemFont(ofSize: 14))
+        } else {
+            // Autocomplete na cor configurável.
+            label.textColor = SombraSettings.shared.nsGhostColor
+            label.stringValue = suffix
+        }
         label.sizeToFit()
         var size = label.frame.size
         size.width = min(size.width, 520) // não estoura a tela
@@ -77,6 +85,23 @@ final class GhostOverlay {
     func hide() {
         label.stringValue = ""
         panel.orderOut(nil)
+    }
+
+    /// Texto da correção: palavra errada riscada (vermelho) + correção (verde escuro).
+    private static func correctionText(wrong: String, right: String, font: NSFont) -> NSAttributedString {
+        let red = NSColor.systemRed
+        let darkGreen = NSColor(srgbRed: 0.10, green: 0.50, blue: 0.20, alpha: 1)
+        let s = NSMutableAttributedString()
+        s.append(NSAttributedString(string: wrong, attributes: [
+            .font: font, .foregroundColor: red,
+            .strikethroughStyle: NSUnderlineStyle.single.rawValue,
+            .strikethroughColor: red,
+        ]))
+        s.append(NSAttributedString(string: "  ", attributes: [.font: font]))
+        s.append(NSAttributedString(string: right, attributes: [
+            .font: font, .foregroundColor: darkGreen,
+        ]))
+        return s
     }
 
     // MARK: - Posicionamento

@@ -33,6 +33,7 @@ final class SuggestionEngine {
             modelDescription = L.t("Heuristic (no model)", "Heurístico (sem modelo)")
             NSLog("[Sombra] Modelo .gguf não encontrado — usando preditor heurístico.")
         }
+        predictor.setTemperature(SombraSettings.shared.modelTemperature)
     }
 
     /// Recarrega o preditor a partir do modelo atualmente selecionado.
@@ -79,6 +80,7 @@ final class SuggestionEngine {
                 guard let self else { return }
                 self.inFlight?.cancel()
                 self.predictor = newPredictor
+                self.predictor.setTemperature(SombraSettings.shared.modelTemperature)
                 self.modelDescription = desc
                 self.dismissGhost()
                 self.lastPrefix = ""
@@ -148,6 +150,12 @@ final class SuggestionEngine {
             forName: .sombraReloadModel, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.reloadModel() }
+        }
+        // Aplica a temperatura quando o slider muda.
+        NotificationCenter.default.addObserver(
+            forName: .sombraTemperatureChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.predictor.setTemperature(SombraSettings.shared.modelTemperature) }
         }
 
         let flag = hasSuggestion
@@ -340,7 +348,7 @@ final class SuggestionEngine {
             if !currentSuffix.isEmpty {
                 overlay.show(suffix: currentSuffix, caretRect: lastCaretRect,
                              elementRect: lastElementRect, isCorrection: mode == .correction,
-                             atEnd: lastAtEnd)
+                             atEnd: lastAtEnd, correction: mode == .correction ? correction : nil)
             }
             return
         }
@@ -389,27 +397,30 @@ final class SuggestionEngine {
             return
         }
 
-        // MEIO DE PALAVRA: completa SÓ pelo dicionário do macOS — instantâneo e
-        // SEM tocar na GPU. O modelo NÃO roda aqui; fica reservado para prever a
-        // frase na fronteira (após o espaço). Resultado: completar palavra é
-        // imediato, e a GPU/temperatura só sobem quando há de fato uma frase a
-        // prever. Se o dicionário não conhece o começo (nome, termo técnico) mas
-        // a palavra está "fechada" e errada, oferece correção; senão, nada.
+        // Idioma DETECTADO do texto recente (NaturalLanguage) — para o dicionário
+        // não completar em português quando você escreve em inglês/alemão.
+        let lang = SpellCorrector.language(for: prefix)
+
+        // MEIO DE PALAVRA: tenta completar instantaneamente pelo dicionário (na
+        // língua detectada) — sem GPU. Se houver, pronto. Se não, mas a palavra
+        // está "fechada" e errada, corrige. Caso o dicionário NÃO conheça o começo
+        // (nome próprio, termo técnico em inglês), CAI no modelo abaixo (fallback:
+        // continua a palavra na língua do texto).
         let endsLetterNow = prefix.last.map { $0.isLetter || $0.isNumber } ?? false
         if endsLetterNow {
             let partial = String(prefix.reversed().prefix { $0.isLetter }.reversed())
-            if let comp = bestCompletion(forPartial: partial) {
-                showAutocomplete(comp)
-            } else if let fix = spellCorrectionForLastWord(in: prefix) {
-                showCorrection(fix)
-            } else {
-                dismissGhost()
+            if let comp = bestCompletion(forPartial: partial, language: lang) {
+                showAutocomplete(comp); return
             }
-            return
+            if let fix = spellCorrectionForLastWord(in: prefix, language: lang) {
+                showCorrection(fix); return
+            }
+            // sem dicionário/correção → segue para o modelo (fallback).
         }
 
-        // FRONTEIRA (após espaço/pontuação): aqui sim o modelo prevê a próxima
-        // frase. É a única situação em que a GPU é acionada.
+        // MODELO: prever a frase na FRONTEIRA, ou continuar a palavra no MEIO
+        // quando o dicionário não soube (fallback). Única situação que usa a GPU.
+        let midWordFallback = endsLetterNow
         refreshBiasIfNeeded()
         // Contexto: tela (app/página + OCR, se ligado) + instrução do MODELO ativo
         // (modelDescription = nome do .gguf carregado) e prompts por app.
@@ -433,20 +444,23 @@ final class SuggestionEngine {
                     self.lastElementRect = f.elementRect
                 }
 
-                if let suffix, !suffix.isEmpty {
-                    self.showAutocomplete(suffix)
-                } else {
-                    self.dismissGhost()
+                guard var suffix, !suffix.isEmpty else { self.dismissGhost(); return }
+                // Fallback no meio da palavra: cola a continuação à palavra (sem
+                // espaço inicial), p/ "kubernet" -> "es" e não "kubernet es".
+                if midWordFallback, suffix.first == " " {
+                    suffix = String(suffix.drop { $0 == " " })
                 }
+                guard !suffix.isEmpty else { self.dismissGhost(); return }
+                self.showAutocomplete(suffix)
             }
         }
     }
 
     /// Melhor completação para uma palavra começada, como SUFIXO a inserir.
-    /// Entre as completações do dicionário, com a personalização ligada, prefere
-    /// a que VOCÊ mais escreve (perfil); senão, a mais provável do dicionário.
-    private func bestCompletion(forPartial partial: String) -> String? {
-        let comps = SpellCorrector.completions(forPartialWord: partial)
+    /// Entre as completações do dicionário (no `language` dado), com a
+    /// personalização ligada, prefere a que VOCÊ mais escreve; senão, a 1ª.
+    private func bestCompletion(forPartial partial: String, language: String) -> String? {
+        let comps = SpellCorrector.completions(forPartialWord: partial, language: language)
         guard let first = comps.first else { return nil }
         let chosen = (SombraSettings.shared.personalizeEnabled
                       ? WritingProfile.shared.preferredCompletion(among: comps) : nil) ?? first
@@ -494,7 +508,8 @@ final class SuggestionEngine {
         correction = fix
         currentSuffix = fix.right
         overlay.show(suffix: fix.right, caretRect: lastCaretRect,
-                     elementRect: lastElementRect, isCorrection: true, atEnd: lastAtEnd)
+                     elementRect: lastElementRect, isCorrection: true, atEnd: lastAtEnd,
+                     correction: fix)
     }
 
     // MARK: - Aceitar / descartar
@@ -536,6 +551,7 @@ final class SuggestionEngine {
             var all = currentSuffix
             if lastPrefix.last == " " { while all.first == " " { all.removeFirst() } }
             guard !all.isEmpty else { return false }
+            if all.last != " " { all += " " }   // espaço final p/ continuar a escrever
             suppressUntil = Date().addingTimeInterval(0.2)
             overlay.hide()
             TextInjector.insert(all)
@@ -556,6 +572,12 @@ final class SuggestionEngine {
         while word.first == " " { word.removeFirst() }
         if hadLeadingSpace, lastPrefix.last != " " { word = " " + word }
         guard !word.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
+
+        // Espaço FINAL: garante UM espaço após a palavra aceita, para a próxima não
+        // colar (ex.: aceitar "complete" deixa "complete " pronto p/ continuar). As
+        // palavras não-finais já trazem o espaço; isto cobre a última / a
+        // completação de palavra única do dicionário (comum em inglês).
+        if word.last != " " { word += " " }
 
         // Suspende o polling enquanto o texto é injetado e "assenta".
         suppressUntil = Date().addingTimeInterval(0.15)
@@ -611,10 +633,10 @@ final class SuggestionEngine {
 
     /// Correção da última palavra do prefixo, se o cursor estiver logo após ela
     /// (prefixo termina em letra) e ela estiver errada. nil caso contrário.
-    private func spellCorrectionForLastWord(in prefix: String) -> (wrong: String, right: String)? {
+    private func spellCorrectionForLastWord(in prefix: String, language: String? = nil) -> (wrong: String, right: String)? {
         let word = String(prefix.reversed().prefix { $0.isLetter }.reversed())
         guard word.count >= 3 else { return nil }
-        guard let fix = SpellCorrector.correction(for: word) else { return nil }
+        guard let fix = SpellCorrector.correction(for: word, language: language) else { return nil }
         return (word, fix)
     }
 }

@@ -6,6 +6,7 @@ extension Notification.Name {
     static let sombraShortcutChanged = Notification.Name("sombraShortcutChanged")
     static let sombraDockChanged = Notification.Name("sombraDockChanged")
     static let sombraReloadModel = Notification.Name("sombraReloadModel")
+    static let sombraTemperatureChanged = Notification.Name("sombraTemperatureChanged")
 }
 
 /// Preferências persistidas (UserDefaults). Observável pela GUI.
@@ -20,6 +21,15 @@ final class SombraSettings: ObservableObject {
     // Instruções de IA POR MODELO: nome do arquivo .gguf -> instrução. Cada modelo
     // guarda a sua (um modelo base ignora; instruct usa). Fallback: customPrompts.
     @Published var modelInstructions: [String: String] { didSet { d.set(modelInstructions, forKey: K.modelInstr) } }
+
+    // Temperatura de amostragem (0 = greedy/estável … 1.5 = mais criativo). Padrão
+    // 0.6 — um pouco de variação melhora a naturalidade em modelos base pequenos.
+    @Published var modelTemperature: Double {
+        didSet {
+            d.set(modelTemperature, forKey: K.temp)
+            NotificationCenter.default.post(name: .sombraTemperatureChanged, object: nil)
+        }
+    }
 
     // Apps onde a Sombra NÃO deve ler/sugerir (bundle ids). Ex.: senhas.
     @Published var blockedApps: [String] { didSet { d.set(blockedApps, forKey: K.blocked) } }
@@ -107,6 +117,7 @@ final class SombraSettings: ObservableObject {
 
     private enum K {
         static let prompts = "customPrompts", modelPath = "modelPath", modelInstr = "modelInstructions"
+        static let temp = "modelTemperature"
         static let words = "suggestionWords", icon = "menuIcon", trimDot = "removeTrailingPeriod"
         static let blocked = "blockedApps", appPrompts = "appPrompts", appNames = "appNames"
         static let persOn = "personalizeEnabled", persStr = "personalizeStrength", persAll = "storeAllInputs"
@@ -124,6 +135,7 @@ final class SombraSettings: ObservableObject {
         // Vazio por padrão: sem preâmbulo => continuação crua (melhor qualidade).
         customPrompts = d.stringArray(forKey: K.prompts) ?? []
         modelInstructions = (d.dictionary(forKey: K.modelInstr) as? [String: String]) ?? [:]
+        modelTemperature = d.object(forKey: K.temp) as? Double ?? 0.6
         blockedApps = d.stringArray(forKey: K.blocked) ?? []
         appPrompts = (d.dictionary(forKey: K.appPrompts) as? [String: [String]]) ?? [:]
         appNames = (d.dictionary(forKey: K.appNames) as? [String: String]) ?? [:]
@@ -189,13 +201,16 @@ final class SombraSettings: ObservableObject {
     /// Chave de um modelo a partir do caminho (nome do arquivo .gguf).
     static func modelKey(forPath path: String) -> String { (path as NSString).lastPathComponent }
 
-    /// Instrução de IA do modelo `key` (por-modelo), com fallback à global.
+    /// Instrução padrão para "Restaurar padrão" — neutra quanto a idioma (não
+    /// trava em português; deixa o autocomplete seguir a língua do texto).
+    static let defaultInstruction = L.t("Keep a clear, natural tone.",
+                                        "Mantenha um tom claro e natural.")
+
+    /// Instrução de IA do modelo `key` (por-modelo). Vazia = sem instrução (só o
+    /// system prompt interno). Sem fallback global — assim "Limpar" realmente
+    /// zera para aquele modelo.
     func instruction(forModelKey key: String) -> String {
-        if let s = modelInstructions[key]?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty {
-            return s
-        }
-        return customPrompts.map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }.joined(separator: "\n")
+        (modelInstructions[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Contexto efetivo: instrução do MODELO ativo + prompts do app atual.

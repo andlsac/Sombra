@@ -10,6 +10,12 @@ struct sombra_ctx {
     const struct llama_vocab * vocab;
     struct llama_sampler * sampler;
 
+    // Estado do sampler (persistido para reconstruí-lo ao mudar temp OU bias sem
+    // perder o outro): temperatura e o viés (logit bias) do perfil do usuário.
+    float temp;
+    llama_logit_bias * biases;
+    int n_biases;
+
     // Tokens do prompt atualmente representados no KV-cache (posições 0..cached_n-1).
     // Permite reaproveitar o prefixo em comum entre chamadas sucessivas.
     llama_token * cached_tokens;
@@ -25,7 +31,8 @@ static bool g_backend_ready = false;
 // para autocomplete). As penalidades evitam loops degenerados e lixo repetido
 // (ex.: '''/***/---), que modelos pequenos costumam emitir.
 static struct llama_sampler * build_sampler(const struct llama_vocab * vocab,
-                                            const llama_logit_bias * biases, int nb) {
+                                            const llama_logit_bias * biases, int nb,
+                                            float temp) {
     struct llama_sampler_chain_params sp = llama_sampler_chain_default_params();
     struct llama_sampler * chain = llama_sampler_chain_init(sp);
     // Anti-repetição: só repeat penalty (a frequency penalty deixava a geração
@@ -38,8 +45,27 @@ static struct llama_sampler * build_sampler(const struct llama_vocab * vocab,
         llama_sampler_chain_add(chain,
             llama_sampler_init_logit_bias(llama_vocab_n_tokens(vocab), nb, biases));
     }
-    llama_sampler_chain_add(chain, llama_sampler_init_greedy());
+    // temp <= 0 => greedy (determinístico). temp > 0 => amostragem leve
+    // (top_k -> top_p -> temp -> dist com seed FIXA): o greedy em modelo base
+    // pequeno cai em continuações genéricas/estranhas (ex.: começar com número);
+    // um pouco de temperatura melhora a naturalidade. A seed fixa + o reset por
+    // chamada mantêm a sugestão ESTÁVEL para o mesmo texto.
+    if (temp <= 0.0f) {
+        llama_sampler_chain_add(chain, llama_sampler_init_greedy());
+    } else {
+        llama_sampler_chain_add(chain, llama_sampler_init_top_k(40));
+        llama_sampler_chain_add(chain, llama_sampler_init_top_p(0.95f, 1));
+        llama_sampler_chain_add(chain, llama_sampler_init_temp(temp));
+        llama_sampler_chain_add(chain, llama_sampler_init_dist(1234));
+    }
     return chain;
+}
+
+// (Re)constrói o sampler a partir do estado atual do ctx (temp + bias), sem
+// perder nenhum dos dois ao mudar só um.
+static void rebuild_sampler(sombra_ctx * c) {
+    if (c->sampler) { llama_sampler_free(c->sampler); c->sampler = NULL; }
+    c->sampler = build_sampler(c->vocab, c->biases, c->n_biases, c->temp);
 }
 
 sombra_ctx * sombra_load(const char * model_path, int n_ctx, int n_gpu_layers) {
@@ -67,8 +93,22 @@ sombra_ctx * sombra_load(const char * model_path, int n_ctx, int n_gpu_layers) {
     c->model   = model;
     c->ctx     = ctx;
     c->vocab   = llama_model_get_vocab(model);
-    c->sampler = build_sampler(c->vocab, NULL, 0);
+    // Temperatura inicial: env (teste) ou 0.6 (padrão). O app sobrescreve via
+    // sombra_set_temp conforme o slider de Ajustes.
+    const char * tenv = getenv("SOMBRA_TEMP");
+    c->temp = tenv ? (float)atof(tenv) : 0.6f;
+    c->biases = NULL;
+    c->n_biases = 0;
+    c->sampler = build_sampler(c->vocab, NULL, 0, c->temp);
     return c;
+}
+
+// Ajusta a temperatura de amostragem (0 = greedy) e reconstrói o sampler,
+// preservando o viés do perfil.
+void sombra_set_temp(sombra_ctx * c, float temp) {
+    if (!c) return;
+    c->temp = temp;
+    rebuild_sampler(c);
 }
 
 // true se o modelo traz um template de chat embutido (instruct/it/chat).
@@ -100,7 +140,6 @@ int sombra_build_chat_prefix(sombra_ctx * c, const char * instruction,
 
 void sombra_set_bias(sombra_ctx * c, const char * words_nl, float strength) {
     if (!c) return;
-    if (c->sampler) { llama_sampler_free(c->sampler); c->sampler = NULL; }
 
     llama_logit_bias biases[256];
     int nb = 0;
@@ -136,12 +175,22 @@ void sombra_set_bias(sombra_ctx * c, const char * words_nl, float strength) {
         }
     }
 
-    c->sampler = build_sampler(c->vocab, biases, nb);
+    // Guarda o viés no ctx (para sobreviver a reconstruções por mudança de temp).
+    free(c->biases);
+    c->biases = NULL;
+    c->n_biases = 0;
+    if (nb > 0) {
+        c->biases = (llama_logit_bias *)malloc(sizeof(llama_logit_bias) * nb);
+        memcpy(c->biases, biases, sizeof(llama_logit_bias) * nb);
+        c->n_biases = nb;
+    }
+    rebuild_sampler(c);
 }
 
 void sombra_free(sombra_ctx * c) {
     if (!c) return;
     if (c->cached_tokens) free(c->cached_tokens);
+    if (c->biases) free(c->biases);
     if (c->sampler) llama_sampler_free(c->sampler);
     if (c->ctx)     llama_free(c->ctx);
     if (c->model)   llama_model_free(c->model);

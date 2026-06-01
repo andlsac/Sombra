@@ -38,6 +38,10 @@ int sombra_complete(sombra_ctx * c,
 // Reconstrói o sampler interno. Passar NULL/0 remove o viés.
 void sombra_set_bias(sombra_ctx * c, const char * words_nl, float strength);
 
+// Temperatura de amostragem: 0 = greedy (determinístico); >0 = amostragem leve
+// (mais natural). Reconstrói o sampler preservando o viés. Padrão 0.6.
+void sombra_set_temp(sombra_ctx * c, float temp);
+
 // true se o modelo traz template de chat embutido (instruct/it/chat).
 bool sombra_has_chat_template(sombra_ctx * c);
 

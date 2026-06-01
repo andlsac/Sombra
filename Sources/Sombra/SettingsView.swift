@@ -337,6 +337,19 @@ struct SettingsView: View {
             Toggle(L.t("Remove trailing period from suggestions",
                        "Remover ponto final das sugestões"), isOn: $settings.removeTrailingPeriod)
 
+            VStack(alignment: .leading) {
+                Text(L.t("Creativity (temperature): \(String(format: "%.1f", settings.modelTemperature))",
+                         "Criatividade (temperatura): \(String(format: "%.1f", settings.modelTemperature))"))
+                HStack {
+                    Text(L.t("Stable", "Estável")).font(.caption2).foregroundStyle(.secondary)
+                    Slider(value: $settings.modelTemperature, in: 0...1.2, step: 0.1)
+                    Text(L.t("Creative", "Criativo")).font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            Text(L.t("0 = always the most likely word (stable, can be generic). Higher = more natural and context-aware, but may wander. 0.6 recommended.",
+                     "0 = sempre a palavra mais provável (estável, pode ficar genérico). Maior = mais natural e contextual, mas pode divagar. 0.6 recomendado."))
+                .font(.caption).foregroundStyle(.secondary)
+
             Divider()
             Text(L.t("Shortcuts", "Atalhos")).font(.subheadline).bold()
 
@@ -517,6 +530,16 @@ struct SettingsView: View {
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.textBackgroundColor)))
                 .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.secondary.opacity(0.25)))
 
+                HStack {
+                    Spacer()
+                    Button(L.t("Clear", "Limpar")) { aiInstructions.wrappedValue = "" }
+                        .disabled(aiInstructions.wrappedValue.isEmpty)
+                    Button(L.t("Reset to default", "Restaurar padrão")) {
+                        aiInstructions.wrappedValue = SombraSettings.defaultInstruction
+                    }
+                }
+                .controlSize(.small)
+
                 Label(L.t("These instructions are saved per model. Active model: \(activeModelKey.isEmpty ? "—" : activeModelKey).",
                           "Estas instruções são salvas por modelo. Modelo ativo: \(activeModelKey.isEmpty ? "—" : activeModelKey)."),
                       systemImage: "cpu")
@@ -595,7 +618,7 @@ struct SettingsView: View {
     private var aiInstructions: Binding<String> {
         let key = activeModelKey
         return Binding(
-            get: { settings.modelInstructions[key] ?? settings.customPrompts.joined(separator: "\n") },
+            get: { settings.modelInstructions[key] ?? "" },
             set: { txt in settings.modelInstructions[key] = txt }
         )
     }

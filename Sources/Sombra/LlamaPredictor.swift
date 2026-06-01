@@ -64,6 +64,11 @@ final class LlamaPredictor: Predictor {
         }
     }
 
+    func setTemperature(_ temperature: Double) {
+        let t = Float(max(0, min(temperature, 1.5)))
+        queue.async { [handle] in sombra_set_temp(handle.ctx, t) }
+    }
+
     func predict(prefix: String, promptContext: String, maxWords: Int) async -> String? {
         let words = Int32(min(max(maxWords, 1), 15))
         let maxTokens = words * 6 + 4 // teto de segurança (subpalavras)
