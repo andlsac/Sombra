@@ -228,11 +228,13 @@ int sombra_complete(sombra_ctx * c,
     char piece[256];
     bool stop = false;
 
+    // Cancelamento por FRONTEIRA DE PALAVRA: se chegou um pedido mais novo
+    // (você continuou digitando), paramos — mas só ao terminar a palavra atual,
+    // NUNCA no meio dela. Assim a palavra que você está digitando é sempre
+    // completada ("compl" -> "completo"), e só as palavras EXTRAS de uma frase
+    // longa são abortadas (controle de calor/backlog). O teto `max_tokens` ainda
+    // limita o caso degenerado de uma "palavra" sem espaço.
     for (int t = 0; t < max_tokens && !stop; t++) {
-        // Cancelamento: se chegou um pedido mais novo, aborta — MAS só depois de
-        // já ter uns caracteres, para completações curtas (ex.: "entre"->"tanto")
-        // aparecerem mesmo enquanto você digita. Gerações longas abortam cedo.
-        if (cur_gen && *cur_gen != my_gen && written >= 8) break;
         llama_token id = llama_sampler_sample(c->sampler, c->ctx, -1);
         if (llama_vocab_is_eog(c->vocab, id)) break;
 
@@ -256,6 +258,9 @@ int sombra_complete(sombra_ctx * c,
             if (ch == ' ' && written > 0 && out[written - 1] != ' ') {
                 words_done++;
                 if (words_done >= max_words) { stop = true; break; }
+                // Pedido obsoleto: a palavra atual já está completa -> para aqui
+                // (em vez de cortar no meio da próxima).
+                if (cur_gen && *cur_gen != my_gen) { stop = true; break; }
             }
 
             if (written < out_cap - 1) {

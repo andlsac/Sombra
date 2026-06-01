@@ -14,7 +14,12 @@ final class SombraSettings: ObservableObject {
     private let d = UserDefaults.standard
 
     // Escrita / prompt — lista de instruções curtas que dão contexto ao modelo.
+    // Usado como instrução GLOBAL (fallback) quando o modelo ativo não tem uma própria.
     @Published var customPrompts: [String] { didSet { d.set(customPrompts, forKey: K.prompts) } }
+
+    // Instruções de IA POR MODELO: nome do arquivo .gguf -> instrução. Cada modelo
+    // guarda a sua (um modelo base ignora; instruct usa). Fallback: customPrompts.
+    @Published var modelInstructions: [String: String] { didSet { d.set(modelInstructions, forKey: K.modelInstr) } }
 
     // Apps onde a Sombra NÃO deve ler/sugerir (bundle ids). Ex.: senhas.
     @Published var blockedApps: [String] { didSet { d.set(blockedApps, forKey: K.blocked) } }
@@ -75,6 +80,12 @@ final class SombraSettings: ObservableObject {
     // dar contexto ao modelo. Opt-in (pede permissão de gravação de tela).
     @Published var useScreenContext: Bool { didSet { d.set(useScreenContext, forKey: K.screenCtx) } }
 
+    // Emoji: sugestão via atalho ":nome" (estilo Slack). Gênero (0 neutro, 1 fem,
+    // 2 masc) e tom de pele (0 nenhum … 5 escuro) para emojis de pessoa.
+    @Published var emojiSuggestionsEnabled: Bool { didSet { d.set(emojiSuggestionsEnabled, forKey: K.emojiOn) } }
+    @Published var emojiGender: Int { didSet { d.set(emojiGender, forKey: K.emojiGender) } }
+    @Published var emojiSkinTone: Int { didSet { d.set(emojiSkinTone, forKey: K.emojiSkin) } }
+
     // Mostrar o app no Dock (padrão: só na barra de menu).
     @Published var showInDock: Bool {
         didSet { d.set(showInDock, forKey: K.dock); NotificationCenter.default.post(name: .sombraDockChanged, object: nil) }
@@ -95,7 +106,7 @@ final class SombraSettings: ObservableObject {
     @Published var ghostA: Double { didSet { d.set(ghostA, forKey: K.a) } }
 
     private enum K {
-        static let prompts = "customPrompts", modelPath = "modelPath"
+        static let prompts = "customPrompts", modelPath = "modelPath", modelInstr = "modelInstructions"
         static let words = "suggestionWords", icon = "menuIcon", trimDot = "removeTrailingPeriod"
         static let blocked = "blockedApps", appPrompts = "appPrompts", appNames = "appNames"
         static let persOn = "personalizeEnabled", persStr = "personalizeStrength", persAll = "storeAllInputs"
@@ -103,6 +114,7 @@ final class SombraSettings: ObservableObject {
         static let onboarded = "hasSeenOnboarding", dock = "showInDock"
         static let autoUpd = "autoCheckUpdates", askedUpd = "hasAskedAutoUpdate"
         static let screenCtx = "useScreenContext"
+        static let emojiOn = "emojiSuggestionsEnabled", emojiGender = "emojiGender", emojiSkin = "emojiSkinTone"
         static let inline = "inlineGhost", unload = "unloadIdleMinutes"
         static let acceptAllKey = "acceptAllKeyCode", acceptAllMods = "acceptAllModifiers", acceptAllLabel = "acceptAllKeyLabel"
         static let r = "ghostR", g = "ghostG", b = "ghostB", a = "ghostA"
@@ -111,11 +123,12 @@ final class SombraSettings: ObservableObject {
     private init() {
         // Vazio por padrão: sem preâmbulo => continuação crua (melhor qualidade).
         customPrompts = d.stringArray(forKey: K.prompts) ?? []
+        modelInstructions = (d.dictionary(forKey: K.modelInstr) as? [String: String]) ?? [:]
         blockedApps = d.stringArray(forKey: K.blocked) ?? []
         appPrompts = (d.dictionary(forKey: K.appPrompts) as? [String: [String]]) ?? [:]
         appNames = (d.dictionary(forKey: K.appNames) as? [String: String]) ?? [:]
         modelPath = d.string(forKey: K.modelPath) ?? ""
-        let w = d.object(forKey: K.words) as? Int ?? 4
+        let w = d.object(forKey: K.words) as? Int ?? 6   // padrão agressivo: frase mais completa
         suggestionWords = min(max(w, 1), 15)
         menuIcon = d.string(forKey: K.icon) ?? "👻"
         removeTrailingPeriod = d.object(forKey: K.trimDot) as? Bool ?? true
@@ -135,6 +148,9 @@ final class SombraSettings: ObservableObject {
         autoCheckUpdates = d.bool(forKey: K.autoUpd)        // opt-in: padrão desligado
         hasAskedAutoUpdate = d.bool(forKey: K.askedUpd)
         useScreenContext = d.bool(forKey: K.screenCtx)      // opt-in: padrão desligado
+        emojiSuggestionsEnabled = d.object(forKey: K.emojiOn) as? Bool ?? true  // só dispara após ":"
+        emojiGender = d.object(forKey: K.emojiGender) as? Int ?? 0   // 0 = neutro
+        emojiSkinTone = d.object(forKey: K.emojiSkin) as? Int ?? 0   // 0 = nenhum (amarelo)
         // Padrão: cinza discreto. O usuário pode deixar vivo.
         ghostR = d.object(forKey: K.r) as? Double ?? 0.50
         ghostG = d.object(forKey: K.g) as? Double ?? 0.50
@@ -170,14 +186,27 @@ final class SombraSettings: ObservableObject {
     /// Contexto global (para a prévia na GUI).
     var promptContext: String { effectiveContext(forApp: nil) }
 
-    /// Contexto efetivo: prompts gerais + prompts do app atual.
-    func effectiveContext(forApp bundleId: String?) -> String {
-        var prompts = customPrompts
-        if let b = bundleId, let extra = appPrompts[b] { prompts += extra }
-        return prompts
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
+    /// Chave de um modelo a partir do caminho (nome do arquivo .gguf).
+    static func modelKey(forPath path: String) -> String { (path as NSString).lastPathComponent }
+
+    /// Instrução de IA do modelo `key` (por-modelo), com fallback à global.
+    func instruction(forModelKey key: String) -> String {
+        if let s = modelInstructions[key]?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty {
+            return s
+        }
+        return customPrompts.map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }.joined(separator: "\n")
+    }
+
+    /// Contexto efetivo: instrução do MODELO ativo + prompts do app atual.
+    func effectiveContext(forApp bundleId: String?, modelKey: String = "") -> String {
+        var parts: [String] = []
+        let instr = instruction(forModelKey: modelKey)
+        if !instr.isEmpty { parts.append(instr) }
+        if let b = bundleId, let extra = appPrompts[b] {
+            parts += extra.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        }
+        return parts.joined(separator: " ")
     }
 
     /// Se a Sombra deve ficar desativada neste app.

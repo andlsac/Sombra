@@ -104,10 +104,12 @@ final class SuggestionEngine {
     private var lastBundleId: String?
     private var lastAtEnd = true   // cursor no fim da linha? → sombra à frente vs abaixo
 
-    // Tipo da sugestão atual: continuação (autocomplete) ou correção ortográfica.
-    private enum Mode { case autocomplete, correction }
+    // Tipo da sugestão atual: continuação, correção ortográfica ou emoji.
+    private enum Mode { case autocomplete, correction, emoji }
     private var mode: Mode = .autocomplete
     private var correction: (wrong: String, right: String)?  // palavra errada -> correta
+    // Atalho de emoji ativo: o gatilho digitado (ex.: ":fel") a apagar e o emoji.
+    private var emojiReplace: (trigger: String, emoji: String)?
 
     private(set) var enabled = true
 
@@ -344,26 +346,31 @@ final class SuggestionEngine {
         }
         lastPrefix = prefix
 
-        // Não sugerir no meio de uma palavra recém-iniciada muito curta.
-        guard prefix.count >= 2 else { dismissGhost(); return }
+        // Atalho de emoji estilo ":nome" (Slack). Tem prioridade: se o fim do
+        // texto for ":fel", sugere 😄 em vez de completar a palavra "fel".
+        if let e = emojiShortcut(in: prefix) {
+            showEmoji(trigger: e.trigger, emoji: e.emoji)
+            return
+        }
+
+        // Agressivo: sugere já a partir do 1º caractere digitado no campo.
+        guard prefix.count >= 1 else { dismissGhost(); return }
 
         // Comprimento da palavra parcial no fim do prefixo (0 = cursor numa
         // fronteira: o texto antes dele termina em espaço/pontuação).
         let partialWordLen = prefix.reversed().prefix { $0.isLetter || $0.isNumber }.count
         if partialWordLen == 0 {
-            // Fronteira: sugere as PRÓXIMAS palavras. Também aprende o par
-            // "palavra anterior → palavra recém-terminada".
+            // Fronteira (após espaço/pontuação): sugere as PRÓXIMAS palavras.
+            // Também aprende o par "palavra anterior → palavra recém-terminada".
             let s = SombraSettings.shared
             if s.personalizeEnabled, s.storeAllInputs, !s.isBlocked(lastBundleId) {
                 WritingProfile.shared.observe(prefix: prefix)
             }
             requestPrediction(prefix: prefix)
-        } else if partialWordLen >= 2 {
-            // Meio de uma palavra (≥2 letras): completa a palavra atual (e segue).
-            requestPrediction(prefix: prefix)
         } else {
-            // Palavra recém-iniciada (1 letra): cedo demais para sugerir.
-            dismissGhost()
+            // Dentro de uma palavra — já a partir da 1ª letra: completa a palavra
+            // atual e segue a frase (a validação anti-lixo ocorre na resposta).
+            requestPrediction(prefix: prefix)
         }
     }
 
@@ -382,16 +389,35 @@ final class SuggestionEngine {
             return
         }
 
+        // MEIO DE PALAVRA: completa SÓ pelo dicionário do macOS — instantâneo e
+        // SEM tocar na GPU. O modelo NÃO roda aqui; fica reservado para prever a
+        // frase na fronteira (após o espaço). Resultado: completar palavra é
+        // imediato, e a GPU/temperatura só sobem quando há de fato uma frase a
+        // prever. Se o dicionário não conhece o começo (nome, termo técnico) mas
+        // a palavra está "fechada" e errada, oferece correção; senão, nada.
+        let endsLetterNow = prefix.last.map { $0.isLetter || $0.isNumber } ?? false
+        if endsLetterNow {
+            let partial = String(prefix.reversed().prefix { $0.isLetter }.reversed())
+            if let comp = bestCompletion(forPartial: partial) {
+                showAutocomplete(comp)
+            } else if let fix = spellCorrectionForLastWord(in: prefix) {
+                showCorrection(fix)
+            } else {
+                dismissGhost()
+            }
+            return
+        }
+
+        // FRONTEIRA (após espaço/pontuação): aqui sim o modelo prevê a próxima
+        // frase. É a única situação em que a GPU é acionada.
         refreshBiasIfNeeded()
-        // Contexto: tela (app/página + OCR, se ligado) + prompts gerais e por app.
-        let userCtx = SombraSettings.shared.effectiveContext(forApp: lastBundleId)
+        // Contexto: tela (app/página + OCR, se ligado) + instrução do MODELO ativo
+        // (modelDescription = nome do .gguf carregado) e prompts por app.
+        let userCtx = SombraSettings.shared.effectiveContext(forApp: lastBundleId,
+                                                              modelKey: modelDescription)
         let screenCtx = ScreenContext.shared.prompt
         let context = [screenCtx, userCtx].filter { !$0.isEmpty }.joined(separator: " ")
-        // No meio da palavra geramos POUCAS palavras (rápido → aparece enquanto
-        // você digita); na fronteira, o tamanho configurado.
-        let midWord = prefix.last.map { $0.isLetter || $0.isNumber } ?? false
-        let full = SombraSettings.shared.suggestionWords
-        let maxWords = midWord ? min(3, full) : full
+        let maxWords = SombraSettings.shared.suggestionWords
         inFlight = Task { [weak self] in
             guard let self else { return }
             let suffix = await self.predictor.predict(prefix: prefix, promptContext: context, maxWords: maxWords)
@@ -407,48 +433,57 @@ final class SuggestionEngine {
                     self.lastElementRect = f.elementRect
                 }
 
-                // Está no meio/fim de uma palavra (sem espaço)?
-                let endsLetter = prefix.last.map { $0.isLetter || $0.isNumber } ?? false
-                // O modelo CONTINUA a mesma palavra (sufixo sem espaço inicial)?
-                let continuesWord = endsLetter && (suffix?.first.map { $0 != " " } ?? false)
-
-                if endsLetter {
-                    // MEIO DE PALAVRA: só completa a própria palavra (se válida).
-                    // NUNCA injeta uma palavra nova aqui (evitava "cal" -> "cal ça").
-                    if let suffix, !suffix.isEmpty, continuesWord,
-                       self.midWordCompletionIsValid(prefix: prefix, suffix: suffix) {
-                        self.showAutocomplete(suffix)
-                    } else if let fix = self.spellCorrectionForLastWord(in: prefix) {
-                        self.showCorrection(fix)   // palavra "fechada" e errada → corrige
-                    } else {
-                        self.dismissGhost()
-                    }
+                if let suffix, !suffix.isEmpty {
+                    self.showAutocomplete(suffix)
                 } else {
-                    // FRONTEIRA (após espaço/pontuação): sugere a próxima palavra.
-                    if let suffix, !suffix.isEmpty {
-                        self.showAutocomplete(suffix)
-                    } else {
-                        self.dismissGhost()
-                    }
+                    self.dismissGhost()
                 }
             }
         }
     }
 
-    /// A palavra formada por (parcial no fim do prefixo + início do sufixo) é
-    /// uma palavra real? Evita completar "canc" -> "canclar".
-    private func midWordCompletionIsValid(prefix: String, suffix: String) -> Bool {
-        let partial = String(prefix.reversed().prefix { $0.isLetter }.reversed())
-        guard !partial.isEmpty else { return true }
-        let comp = String(suffix.prefix { $0.isLetter })
-        let full = partial + comp
-        guard full.count >= 3 else { return true }
-        return !SpellCorrector.isMisspelled(full)
+    /// Melhor completação para uma palavra começada, como SUFIXO a inserir.
+    /// Entre as completações do dicionário, com a personalização ligada, prefere
+    /// a que VOCÊ mais escreve (perfil); senão, a mais provável do dicionário.
+    private func bestCompletion(forPartial partial: String) -> String? {
+        let comps = SpellCorrector.completions(forPartialWord: partial)
+        guard let first = comps.first else { return nil }
+        let chosen = (SombraSettings.shared.personalizeEnabled
+                      ? WritingProfile.shared.preferredCompletion(among: comps) : nil) ?? first
+        let suffix = String(chosen.dropFirst(partial.count))
+        return suffix.isEmpty ? nil : suffix
+    }
+
+    /// Se o fim do prefixo for um atalho de emoji (":nome" com 2+ letras), devolve
+    /// o gatilho a apagar (":nome") e o emoji escolhido. nil caso contrário.
+    private func emojiShortcut(in prefix: String) -> (trigger: String, emoji: String)? {
+        guard SombraSettings.shared.emojiSuggestionsEnabled,
+              let colon = prefix.lastIndex(of: ":") else { return nil }
+        let query = prefix[prefix.index(after: colon)...]
+        // 2+ caracteres de nome (letras/dígitos/underscore, como :raising_hand,
+        // :100) após ":". O ":" deve INICIAR o token (começo, ou após espaço/
+        // pontuação) — evita disparar em "http:", "12:30", "::", etc.
+        guard query.count >= 2,
+              query.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }),
+              query.contains(where: { $0.isLetter || $0.isNumber }) else { return nil }
+        if let before = prefix[..<colon].last, before.isLetter || before.isNumber { return nil }
+        guard let emoji = EmojiCatalog.emoji(forQuery: String(query).lowercased()) else { return nil }
+        return (":" + query, emoji)
+    }
+
+    private func showEmoji(trigger: String, emoji: String) {
+        mode = .emoji
+        correction = nil
+        emojiReplace = (trigger, emoji)
+        currentSuffix = emoji
+        overlay.show(suffix: emoji, caretRect: lastCaretRect, elementRect: lastElementRect,
+                     atEnd: lastAtEnd)
     }
 
     private func showAutocomplete(_ suffix: String) {
         mode = .autocomplete
         correction = nil
+        emojiReplace = nil
         currentSuffix = suffix
         overlay.show(suffix: suffix, caretRect: lastCaretRect, elementRect: lastElementRect,
                      atEnd: lastAtEnd)
@@ -479,6 +514,19 @@ final class SuggestionEngine {
             lastPrefix = String(lastPrefix.dropLast(fix.wrong.count)) + fix.right
             currentSuffix = ""
             correction = nil
+            mode = .autocomplete
+            return true
+        }
+
+        // Modo emoji: apaga o atalho digitado (":fel") e insere o emoji.
+        if mode == .emoji, let e = emojiReplace {
+            suppressUntil = Date().addingTimeInterval(0.2)
+            overlay.hide()
+            TextInjector.deleteBackward(count: e.trigger.count)
+            TextInjector.insert(e.emoji)
+            lastPrefix = String(lastPrefix.dropLast(e.trigger.count)) + e.emoji
+            currentSuffix = ""
+            emojiReplace = nil
             mode = .autocomplete
             return true
         }
@@ -556,6 +604,7 @@ final class SuggestionEngine {
     private func dismissGhost() {
         currentSuffix = ""
         correction = nil
+        emojiReplace = nil
         mode = .autocomplete
         overlay.hide()
     }

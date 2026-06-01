@@ -71,6 +71,9 @@ final class LlamaPredictor: Predictor {
         let isInstruct = self.isInstruct
         let maxPrefix = self.maxPrefixChars
         let ctxLower = promptContext.lowercased()
+        // Cauda do texto já digitado (minúscula), para detectar quando o modelo
+        // REPETE o que você acabou de escrever (eco do próprio corpo).
+        let bodyLower = String(prefix.suffix(maxPrefixChars)).lowercased()
         // Marca esta geração como a mais recente; gerações anteriores abortam.
         genPtr.pointee &+= 1
         let myGen = genPtr.pointee
@@ -98,10 +101,11 @@ final class LlamaPredictor: Predictor {
                 guard s.contains(where: { $0.isLetter || $0.isNumber }) else {
                     cont.resume(returning: nil); return
                 }
-                // Anti-eco: às vezes o modelo "repete" as instruções de contexto
-                // (ex.: "Aguarde 2 palavras para trocar de idioma"). Descarta se o
-                // sufixo for um trecho do contexto.
-                if !ctxLower.isEmpty, s.count >= 8, ctxLower.contains(s.lowercased()) {
+                // Anti-eco: descarta quando o modelo "repete" as instruções/contexto
+                // OU o próprio texto que você acabou de digitar (eco do corpo).
+                let sl = s.lowercased()
+                if sl.count >= 6,
+                   (!ctxLower.isEmpty && ctxLower.contains(sl)) || bodyLower.contains(sl) {
                     cont.resume(returning: nil); return
                 }
                 cont.resume(returning: s.isEmpty ? nil : s)
@@ -136,45 +140,50 @@ final class LlamaPredictor: Predictor {
         return s
     }
 
+    /// Papel INTERNO do modelo (system prompt). Define o que a Sombra é e proíbe
+    /// os modos de falha que modelos pequenos cometem (preencher lacunas com
+    /// "____", rótulos "A)", repetir o texto ou repetir/responder as instruções).
+    /// As instruções do usuário entram DEPOIS, como orientação — nunca como texto
+    /// a ecoar. Só se aplica a modelos INSTRUCT (com template de chat).
+    private static func systemPrompt(userContext: String) -> String {
+        var s = L.t(
+            "You are a silent inline autocomplete inside the user's text editor. Continue the text from exactly where it stops, in the SAME language, matching its tone and logic. Output ONLY the raw continuation: never repeat or rephrase the existing text, never restate or answer these instructions, never produce blanks, underscores, placeholders, quotes, lists, labels (like \"A)\") or explanations. A short continuation of a few words is fine.",
+            "Você é um autocompletar silencioso dentro do editor de texto do usuário. Continue o texto exatamente de onde ele para, na MESMA língua, mantendo o tom e a lógica. Produza APENAS a continuação crua: nunca repita nem reformule o texto existente, nunca repita ou responda estas instruções, nunca gere lacunas, underscores, placeholders, aspas, listas, rótulos (como \"A)\") ou explicações. Uma continuação curta de poucas palavras já basta.")
+        let ctx = userContext.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !ctx.isEmpty {
+            s += L.t("\n\nUser preferences (guidance only — never output this): ",
+                     "\n\nPreferências do usuário (apenas orientação — nunca escreva isto): ") + ctx
+        }
+        return s
+    }
+
     /// Monta o prompt de geração.
-    /// - Modelo base: continuação crua (contexto + texto), na mesma linha.
-    /// - Modelo instruct: usa o template de chat com PREFILL — instrução no turno
-    ///   `user` e o texto a continuar no turno do assistente, para o modelo
-    ///   CONTINUAR a escrita em vez de virar "assistente" (ex.: "A resposta é…").
+    /// - Modelo BASE: continuação PURA do texto do usuário. Instruções/contexto
+    ///   NÃO entram — modelos base só continuam texto, então instruções viram
+    ///   lixo ("____") ou eco. É o que dá a melhor qualidade de autocomplete.
+    /// - Modelo INSTRUCT: template de chat — system prompt interno (papel) +
+    ///   instruções do usuário no turno `user`, e o texto a continuar como PREFILL
+    ///   do assistente, para CONTINUAR (não "responder") e sem vazar a instrução.
     /// Chamado dentro da `queue` (serializado). Estático: só usa estado imutável,
     /// evitando capturar `self` (não-Sendable) na closure da fila.
     private static func buildPrompt(prefix: String, context: String, isInstruct: Bool,
                                     handle: LlamaHandle, maxPrefixChars: Int) -> String {
         let body = prefix.count <= maxPrefixChars ? prefix : String(prefix.suffix(maxPrefixChars))
-        let rawFallback = context.isEmpty ? body : context + " " + body
-        guard isInstruct else { return rawFallback }
-
-        // Modo de prompt: SOMBRA_PROMPT_MODE = raw | prefill | user.
-        // Padrão `raw` (continuação crua): nos testes com modelos instruct
-        // pequenos (Gemma-1B) foi o mais confiável — sem EOG→vazio em textos
-        // curtos e sem chatter de assistente ("ok, let's try again"), que o
-        // template de chat (prefill/user) induzia. Modelos BASE usam este caminho
-        // nativamente e dão a melhor qualidade de autocomplete.
-        let mode = ProcessInfo.processInfo.environment["SOMBRA_PROMPT_MODE"] ?? "raw"
-        if mode == "raw" { return rawFallback }
-
-        var instruction = L.t(
-            "You are an inline writing autocomplete. Continue the user's text in the same language. Reply with ONLY the natural continuation — no explanations, no quotes, no lists, and do not repeat the text already written.",
-            "Você é um autocompletar de escrita embutido. Continue o texto do usuário na mesma língua. Responda APENAS com a continuação natural — sem explicações, sem aspas, sem listas e sem repetir o texto já escrito.")
-        if !context.isEmpty { instruction += " " + context }
-
-        if mode == "user" {
-            // Texto vai DENTRO do turno do usuário; assistente gera a continuação.
-            var buf = [CChar](repeating: 0, count: 8192)
-            let full = instruction + "\n\n" + body
-            let n = sombra_build_chat_prefix(handle.ctx, full, &buf, 8192)
-            return n > 0 ? String(cString: buf) : rawFallback
+        // Modelo base: pura continuação (ignora instruções/contexto de propósito).
+        // Escape de teste: SOMBRA_PROMPT_MODE=raw força a concatenação antiga.
+        if !isInstruct {
+            if ProcessInfo.processInfo.environment["SOMBRA_PROMPT_MODE"] == "raw", !context.isEmpty {
+                return context + " " + body
+            }
+            return body
         }
 
-        // prefill (padrão): instrução no turno user, texto no turno do assistente.
+        // Instruct: instrução (papel + preferências) no turno user; texto como
+        // prefill do assistente.
+        let instruction = systemPrompt(userContext: context)
         var buf = [CChar](repeating: 0, count: 4096)
         let n = sombra_build_chat_prefix(handle.ctx, instruction, &buf, 4096)
-        guard n > 0 else { return rawFallback }
+        guard n > 0 else { return context.isEmpty ? body : context + " " + body }
         return String(cString: buf) + body
     }
 }

@@ -56,11 +56,21 @@ the last word. Inspired by other apps of the genre, such as
 ### Features
 
 - **Word-by-word autocomplete** — each **Tab** inserts only the next word.
+- **Instant word completion** — while you type a word, the rest comes straight
+  from the macOS dictionary (no model, no GPU) so it appears immediately; the
+  local model is used to predict the **next phrase** after a space.
+- **Emoji shortcuts** — type `:name` (e.g. `:fire`, `:rocket`, `:tada`) and accept
+  to insert the emoji. Standard GitHub/Slack names **plus Portuguese aliases**
+  (`:festa`, `:fogo`, `:coração`), with configurable **gender** and **skin tone**.
 - **Spell correction** of the last word (native macOS spell-checker, multilingual)
   — shown in **orange**; Tab replaces it. Also fixes **missing accents**
   (e.g. *voce → você*) that macOS treats as “correct”, without touching valid words.
 - **Mid-text editing** — completes the word you're typing and suggests the next
   ones at word boundaries, not just at the line end.
+- **Per-model AI instructions** — tell the AI about you (languages, tone, role).
+  Each model remembers **its own** instructions; instruct models (Gemma 1B, Qwen)
+  follow them via an internal system prompt, so they **guide without leaking** into
+  your text. The base model (Gemma E2B) does plain continuation and ignores them.
 - **Per-app rules** — block apps (e.g. password managers) and set **per-app
   prompts** (email, browser, messaging…).
 - **Works in most apps**, including Electron/Chromium ones (Claude, VS Code,
@@ -74,7 +84,8 @@ the last word. Inspired by other apps of the genre, such as
 - Configurable: suggestion length, **accept shortcut**, a separate **accept-whole
   shortcut**, idle model unload (frees RAM), shadow color/opacity, menu-bar icon.
 - **Optional personalization** — learns the words you use (stored locally) and
-  gently favors them in suggestions, via a tunable "favor my words" dial.
+  favors them: it both biases the model and **ranks the dictionary completions**,
+  so typing `to` can suggest *totalmente* if that's what you usually write.
 - **Bilingual UI** (English / Portuguese) that follows your system language, in a
   **glossy "Frutiger Aero" theme** (translucent glass, vivid candy colors).
 - **Lightweight app, no embedded model** — the app is ~16 MB; you pick and
@@ -155,6 +166,12 @@ do cursor. Você aceita apertando **Tab**.
 ### Recursos
 
 - **Autocomplete palavra-por-palavra** — cada **Tab** insere só a próxima palavra.
+- **Completação instantânea da palavra** — enquanto você digita, o resto vem
+  direto do dicionário do macOS (sem modelo, sem GPU), então aparece na hora; o
+  modelo local prevê a **próxima frase** após o espaço.
+- **Atalhos de emoji** — digite `:nome` (ex.: `:fire`, `:foguete`, `:festa`) e
+  aceite pra inserir o emoji. Nomes padrão (GitHub/Slack) **e apelidos em PT**
+  (`:festa`, `:fogo`, `:coração`), com **gênero** e **tom de pele** configuráveis.
 - **Correção ortográfica** (NSSpellChecker, multilíngue) — mostra a correção da
   última palavra em **laranja**; o **Tab** substitui. Também pega **falta de
   acento** (ex.: *voce → você*) que o macOS considera “correta”, sem mexer em
@@ -170,8 +187,13 @@ do cursor. Você aceita apertando **Tab**.
 - **Contexto da tela (OCR)** — opcional: detecta o app/página (email, navegador,
   Reddit, GitHub…) e lê o texto visível pra sugestões mais no contexto. Opt-in
   (pede Gravação de Tela); desligado por padrão.
+- **Instruções de IA por modelo** — conte à IA sobre você (línguas, tom, função).
+  Cada modelo guarda **as suas**; modelos instruct (Gemma 1B, Qwen) as seguem via
+  um system prompt interno — **guiam sem vazar** no texto. O modelo base (Gemma
+  E2B) faz continuação pura e as ignora.
 - **Personalização opcional** — aprende as palavras que você usa (guardadas
-  localmente) e as favorece nas sugestões, com um controle de intensidade.
+  localmente) e as favorece: enviesa o modelo **e ordena as completações do
+  dicionário**, então digitar `to` pode sugerir *totalmente* se é o que você usa.
 - **Atalhos configuráveis** (aceitar palavra-por-palavra e aceitar a frase
   inteira), descarregar modelo ocioso, e **introdução** na primeira abertura.
 - **App leve, sem modelo embutido** (~16 MB) — você escolhe e baixa o modelo no

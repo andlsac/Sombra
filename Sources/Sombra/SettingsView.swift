@@ -8,7 +8,6 @@ struct SettingsView: View {
     @ObservedObject var updater = Updater.shared
     let onReloadModel: () -> Void
 
-    @State private var newPrompt = ""
     @State private var selectedAppId = ""
     @State private var newAppPrompt = ""
     @State private var recordingTarget: String?  // "word" ou "all"
@@ -485,9 +484,9 @@ struct SettingsView: View {
     private var writingTab: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text(L.t("Refine writing", "Refinar a escrita")).font(.headline)
-                Text(L.t("Add short instructions (style, language…). They become the context sent to the model. Empty = raw continuation.",
-                         "Adicione instruções curtas (estilo, idioma…). Elas viram o contexto enviado ao modelo. Sem nada = continuação pura."))
+                Text(L.t("AI instructions", "Instruções para a IA")).font(.headline)
+                Text(L.t("Tell the AI about you and how to write (your languages, tone, role…). These guide an internal instruction — they are never typed out. Leave empty for plain continuation.",
+                         "Conte à IA sobre você e como escrever (suas línguas, tom, função…). Elas guiam uma instrução interna — nunca são digitadas no texto. Deixe vazio para continuação simples."))
                     .font(.caption).foregroundStyle(.secondary)
 
                 Divider()
@@ -501,58 +500,104 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
                 Divider()
 
-                // Campo para digitar e adicionar um prompt.
-                HStack {
-                    TextField(L.t("e.g.: Write in English.", "ex.: Escreva em Português do Brasil."),
-                              text: $newPrompt, onCommit: addPrompt)
-                        .textFieldStyle(.roundedBorder)
-                    Button(L.t("Add", "Adicionar"), action: addPrompt)
-                        .disabled(newPrompt.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-
-                // Prompts já adicionados.
-                if settings.customPrompts.isEmpty {
-                    Text(L.t("No prompts added.", "Nenhum prompt adicionado.")).font(.caption).foregroundStyle(.secondary)
-                } else {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(L.t("Active prompts", "Prompts ativos")).font(.caption).foregroundStyle(.secondary)
-                        ForEach(Array(settings.customPrompts.enumerated()), id: \.offset) { idx, p in
-                            HStack {
-                                Image(systemName: "text.quote").foregroundStyle(.secondary)
-                                Text(p).font(.callout)
-                                Spacer()
-                                Button { settings.customPrompts.remove(at: idx) }
-                                    label: { Image(systemName: "xmark.circle.fill") }
-                                    .buttonStyle(.plain).foregroundStyle(.secondary)
-                            }
-                            .padding(6)
-                            .background(RoundedRectangle(cornerRadius: 6)
-                                .fill(Color(NSColor.textBackgroundColor)))
-                        }
+                // Campo único de instruções (estilo Cotypist "Custom AI Instructions").
+                ZStack(alignment: .topLeading) {
+                    if aiInstructions.wrappedValue.isEmpty {
+                        Text(L.t("e.g.: I write in Brazilian Portuguese, English and German. Keep a clear, professional tone.",
+                                 "ex.: Escrevo em português do Brasil, inglês e alemão. Mantenha um tom claro e profissional."))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 6).padding(.vertical, 8).allowsHitTesting(false)
                     }
+                    TextEditor(text: aiInstructions)
+                        .font(.callout)
+                        .frame(minHeight: 90)
+                        .scrollContentBackground(.hidden)
+                        .padding(4)
                 }
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.textBackgroundColor)))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.secondary.opacity(0.25)))
 
-                Divider()
+                Label(L.t("These instructions are saved per model. Active model: \(activeModelKey.isEmpty ? "—" : activeModelKey).",
+                          "Estas instruções são salvas por modelo. Modelo ativo: \(activeModelKey.isEmpty ? "—" : activeModelKey)."),
+                      systemImage: "cpu")
+                    .font(.caption).foregroundStyle(.secondary)
+                Label(L.t("Instructions apply to instruct models (e.g. Gemma 1B, Qwen). The base model (Gemma E2B) does plain continuation and ignores them.",
+                          "As instruções valem para modelos instruct (ex.: Gemma 1B, Qwen). O modelo base (Gemma E2B) faz continuação pura e as ignora."),
+                      systemImage: "info.circle")
+                    .font(.caption).foregroundStyle(.secondary)
 
-                // Presets prontos para adicionar com um clique.
+                // Presets prontos: clicar acrescenta uma linha.
                 Text(L.t("Ready-made suggestions", "Sugestões prontas")).font(.caption).foregroundStyle(.secondary)
                 FlowChips(items: SombraSettings.presetPrompts.filter {
-                    !settings.customPrompts.contains($0)
+                    !aiInstructions.wrappedValue.localizedCaseInsensitiveContains($0)
                 }) { preset in
-                    settings.customPrompts.append(preset)
+                    let cur = aiInstructions.wrappedValue
+                    aiInstructions.wrappedValue = cur.isEmpty ? preset : cur + "\n" + preset
                 }
 
                 Divider()
                 learningSection
+
+                Divider()
+                emojiSection
             }
         }
     }
 
-    private func addPrompt() {
-        let t = newPrompt.trimmingCharacters(in: .whitespaces)
-        guard !t.isEmpty, !settings.customPrompts.contains(t) else { newPrompt = ""; return }
-        settings.customPrompts.append(t)
-        newPrompt = ""
+    // Sugestão de emoji por atalho ":nome" (estilo Slack).
+    private var emojiSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(L.t("Emoji shortcut", "Atalho de emoji")).font(.headline)
+            Text(L.t("Type \":\" followed by a standard name (e.g. :tada, :fire, :rocket, :thumbsup) and Sombra suggests an emoji. Names are in English (GitHub/Slack style). Accept with the same key as text.",
+                     "Digite \":\" seguido de um nome padrão (ex.: :tada, :fire, :rocket, :thumbsup) e a Sombra sugere um emoji. Os nomes são em inglês (estilo GitHub/Slack). Aceite com a mesma tecla do texto."))
+                .font(.caption).foregroundStyle(.secondary)
+
+            Toggle(L.t("Enable emoji suggestions", "Ativar sugestão de emoji"),
+                   isOn: $settings.emojiSuggestionsEnabled)
+
+            if settings.emojiSuggestionsEnabled {
+                Picker(L.t("Gender (people)", "Gênero (pessoas)"), selection: $settings.emojiGender) {
+                    Text(L.t("Neutral", "Neutro")).tag(0)
+                    Text(L.t("Female", "Feminino")).tag(1)
+                    Text(L.t("Male", "Masculino")).tag(2)
+                }
+                .pickerStyle(.segmented)
+
+                Picker(L.t("Skin tone", "Tom de pele"), selection: $settings.emojiSkinTone) {
+                    Text(L.t("None", "Nenhum")).tag(0)
+                    Text("🏻").tag(1)
+                    Text("🏼").tag(2)
+                    Text("🏽").tag(3)
+                    Text("🏾").tag(4)
+                    Text("🏿").tag(5)
+                }
+                .pickerStyle(.segmented)
+
+                HStack(spacing: 10) {
+                    Text(L.t("Preview:", "Prévia:")).font(.caption).foregroundStyle(.secondary)
+                    Text(["thumbsup", "raising_hand", "technologist", "wave"]
+                        .compactMap { EmojiCatalog.emoji(forQuery: $0) }
+                        .joined(separator: "  "))
+                        .font(.title3)
+                }
+            }
+        }
+    }
+
+    /// Nome do arquivo do modelo ATIVO (o mesmo que o motor carrega via ModelLocator).
+    private var activeModelKey: String {
+        ModelLocator.find().map { ($0 as NSString).lastPathComponent } ?? ""
+    }
+
+    /// Instruções de IA do MODELO ATIVO (estilo Cotypist), um texto livre. Cada
+    /// modelo guarda a sua; se ainda não tiver, mostra a global (customPrompts)
+    /// como ponto de partida e passa a salvar por-modelo ao editar.
+    private var aiInstructions: Binding<String> {
+        let key = activeModelKey
+        return Binding(
+            get: { settings.modelInstructions[key] ?? settings.customPrompts.joined(separator: "\n") },
+            set: { txt in settings.modelInstructions[key] = txt }
+        )
     }
 
     // Personalização: aprende com a sua escrita e favorece seus termos.

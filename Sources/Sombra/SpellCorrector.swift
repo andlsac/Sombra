@@ -35,13 +35,21 @@ enum SpellCorrector {
         return nil
     }
 
-    /// true se a palavra é sinalizada como ERRADA pelo corretor. Usado para
-    /// descartar completações no meio da palavra que formam não-palavras
-    /// (ex.: "canc" + "lar" = "canclar").
+    /// Completações de uma palavra COMEÇADA (ex.: "absolut" -> ["absolutamente",
+    /// "absoluta", …]), usando o dicionário do macOS. Instantâneo e independente
+    /// do modelo de IA. A lista vem ordenada do mais provável (1º) ao menos, e só
+    /// inclui palavras que REALMENTE estendem o que foi digitado. O ranqueamento
+    /// final (ex.: pelo perfil de escrita) fica a cargo de quem chama.
     @MainActor
-    static func isMisspelled(_ word: String) -> Bool {
-        guard word.count >= 3, word.allSatisfy({ $0.isLetter }) else { return false }
-        return checker.checkSpelling(of: word, startingAt: 0).location != NSNotFound
+    static func completions(forPartialWord word: String, limit: Int = 12) -> [String] {
+        guard word.count >= 2, word.allSatisfy({ $0.isLetter }) else { return [] }
+        let range = NSRange(location: 0, length: (word as NSString).length)
+        let comps = checker.completions(forPartialWordRange: range, in: word,
+                                        language: checker.language(),
+                                        inSpellDocumentWithTag: 0) ?? []
+        return comps.filter {
+            $0.count > word.count && $0.lowercased().hasPrefix(word.lowercased())
+        }.prefix(limit).map { $0 }
     }
 
     /// Normaliza removendo acentos e caixa, para comparar "mesma palavra".

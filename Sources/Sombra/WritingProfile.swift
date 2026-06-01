@@ -79,6 +79,20 @@ final class WritingProfile {
         return best.key
     }
 
+    /// Entre `candidates`, a palavra que VOCÊ mais escreveu (contagem > 0).
+    /// nil se nenhuma estiver no seu perfil — aí quem chama usa a ordem padrão
+    /// do dicionário. É o que torna o aprendizado VISÍVEL nas completações:
+    /// digitar "to" passa a sugerir "totalmente" se é o que você costuma usar.
+    func preferredCompletion(among candidates: [String]) -> String? {
+        var best: String?
+        var bestCount = 0
+        for w in candidates {
+            let n = counts[w.lowercased()] ?? 0
+            if n > bestCount { bestCount = n; best = w }
+        }
+        return bestCount > 0 ? best : nil
+    }
+
     /// Reinicia a sequência de observação (ao trocar de campo/app ou editar).
     func resetSequence() { lastObservedPair = "" }
 
