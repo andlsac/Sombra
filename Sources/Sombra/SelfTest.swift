@@ -10,7 +10,15 @@ enum SelfTest {
             prompt = "Bom dia, tudo bem? Estou escrevendo para "
         }
 
-        guard let path = ModelLocator.find() else {
+        // Override direto por SOMBRA_MODEL (o ModelLocator pega o 1º .gguf
+        // alfabético e ignora o env — no teste queremos escolher o modelo).
+        let envModel = ProcessInfo.processInfo.environment["SOMBRA_MODEL"]
+        let path: String
+        if let m = envModel, FileManager.default.fileExists(atPath: m) {
+            path = m
+        } else if let p = ModelLocator.find() {
+            path = p
+        } else {
             FileHandle.standardError.write(Data("[selftest] Modelo não encontrado. Rode scripts/download_model.sh\n".utf8))
             exit(2)
         }

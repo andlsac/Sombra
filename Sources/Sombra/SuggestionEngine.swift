@@ -151,6 +151,13 @@ final class SuggestionEngine {
     // Atalho de emoji ativo: o gatilho digitado (ex.: ":fel") a apagar e o emoji.
     private var emojiReplace: (trigger: String, emoji: String)?
 
+    // Cache do ranqueio (meio da palavra): ranqueia 1× por palavra e, enquanto
+    // você digita MAIS letras da MESMA palavra, só FILTRA a lista ranqueada (sem
+    // GPU). Re-ranqueia só quando o contexto muda ou nenhuma cacheada casa.
+    private var rankAnchor: String?      // contexto (antes da palavra) do cache
+    private var rankPartial = ""         // parcial quando ranqueou (cobre extensões)
+    private var rankedWords: [String] = [] // palavras inteiras, melhor → pior
+
     private(set) var enabled = true
 
     // Debounce: só prevê após o usuário pausar brevemente a digitação.
@@ -452,13 +459,14 @@ final class SuggestionEngine {
         // não completar em português quando você escreve em inglês/alemão.
         let lang = SpellCorrector.language(for: prefix)
 
-        // MEIO DE PALAVRA: tenta completar instantaneamente pelo dicionário (na
-        // língua detectada) — sem GPU. Se houver, pronto. Se não, mas a palavra
-        // está "fechada" e errada, corrige. Caso o dicionário NÃO conheça o começo
-        // (nome próprio, termo técnico em inglês), CAI no modelo abaixo (fallback:
-        // continua a palavra na língua do texto).
+        // MEIO DE PALAVRA: o MODELO é PRIMÁRIO (continuação com contexto que
+        // respeita as letras já digitadas → "casa da m" -> "ãe"; "é o g" -> "ato").
+        // O dicionário entra só como FALLBACK FRIO — enquanto o modelo ainda
+        // carrega ou está descarregado por ociosidade — p/ nunca ficar sem nada.
+        // (A correção da última palavra também é fallback nesse caso.)
         let endsLetterNow = prefix.last.map { $0.isLetter || $0.isNumber } ?? false
-        if endsLetterNow {
+        let modelReady = (predictor is LlamaPredictor) && modelState == .ready
+        if endsLetterNow, !modelReady {
             let partial = String(prefix.reversed().prefix { $0.isLetter }.reversed())
             if let comp = bestCompletion(forPartial: partial, language: lang) {
                 showAutocomplete(comp); return
@@ -466,7 +474,72 @@ final class SuggestionEngine {
             if let fix = spellCorrectionForLastWord(in: prefix, language: lang) {
                 showCorrection(fix); return
             }
-            // sem dicionário/correção → segue para o modelo (fallback).
+            dismissGhost(); return   // modelo frio e dicionário sem palpite
+        }
+
+        // MEIO DE PALAVRA com modelo PRONTO: o DICIONÁRIO dá as palavras válidas
+        // (letras certas, sem corte por tokenização) e o MODELO ESCOLHE a que cabe
+        // no contexto. O sufixo vem da palavra do dicionário (string) → nunca perde
+        // letra (conserta o "sugestões→sugesões"). Re-ranqueia a cada pausa
+        // (debounce + cancelamento). Dicionário vazio = typo/desconhecido → corrige
+        // ou cai no modelo (continuação) abaixo.
+        if endsLetterNow, modelReady {
+            let partial = String(prefix.reversed().prefix { $0.isLetter }.reversed())
+            let contextPrefix = String(prefix.dropLast(partial.count))
+            let pl = partial.lowercased()
+
+            // CACHE: mesma palavra, só mais letras → FILTRA a lista já ranqueada
+            // (sem GPU). É o que torna o meio da palavra quase instantâneo.
+            if rankAnchor == contextPrefix, pl.hasPrefix(rankPartial),
+               let best = rankedWords.first(where: {
+                   $0.count > partial.count && $0.lowercased().hasPrefix(pl)
+               }) {
+                showAutocomplete(String(best.dropFirst(partial.count)))
+                return
+            }
+
+            // Re-ranqueia: candidatos do dicionário (letras certas) → modelo escolhe.
+            var cands = WordDictionary.completions(forPartial: partial, language: lang, limit: 6)
+            if partial.count >= 2 {
+                let have = Set(cands.map { $0.lowercased() })
+                for c in SpellCorrector.completions(forPartialWord: partial, language: lang)
+                where !have.contains(c.lowercased()) { cands.append(c) }
+            }
+            if !cands.isEmpty {
+                let userCtx = SombraSettings.shared.effectiveContext(forApp: lastBundleId,
+                                                                     modelKey: modelDescription)
+                let screenCtx = ScreenContext.shared.prompt
+                let ctx = [screenCtx, userCtx].filter { !$0.isEmpty }.joined(separator: " ")
+                let topN = Array(cands.prefix(6))
+                inFlight = Task { [weak self] in
+                    guard let self else { return }
+                    let ranked = await self.predictor.rank(candidates: topN,
+                                                           contextPrefix: contextPrefix,
+                                                           promptContext: ctx)
+                    if Task.isCancelled { return }
+                    await MainActor.run {
+                        guard self.lastPrefix == prefix else { return }
+                        if let f = AXReader.read() {
+                            self.lastCaretRect = f.caretRect
+                            self.lastElementRect = f.elementRect
+                        }
+                        let words = ranked.isEmpty ? topN : ranked
+                        // Guarda o cache p/ as próximas letras filtrarem sem GPU.
+                        self.rankAnchor = contextPrefix
+                        self.rankPartial = pl
+                        self.rankedWords = words
+                        guard let best = words.first(where: { $0.count > partial.count })
+                        else { self.dismissGhost(); return }
+                        self.showAutocomplete(String(best.dropFirst(partial.count)))
+                    }
+                }
+                return
+            }
+            // Dicionário não conhece o prefixo (typo/nome próprio): corrige se for
+            // erro; senão segue para o modelo (continuação) abaixo.
+            if let fix = spellCorrectionForLastWord(in: prefix, language: lang) {
+                showCorrection(fix); return
+            }
         }
 
         // MODELO: prever a frase na FRONTEIRA, ou continuar a palavra no MEIO
@@ -479,7 +552,10 @@ final class SuggestionEngine {
                                                               modelKey: modelDescription)
         let screenCtx = ScreenContext.shared.prompt
         let context = [screenCtx, userCtx].filter { !$0.isEmpty }.joined(separator: " ")
-        let maxWords = SombraSettings.shared.suggestionWords
+        // No MEIO da palavra basta FINALIZAR a palavra atual (maxWords=1) → geração
+        // curta (~60–100 ms), barata de re-rodar a cada letra. A FRASE inteira vem
+        // na FRONTEIRA (após o espaço), com o nº de palavras configurado.
+        let maxWords = endsLetterNow ? 1 : SombraSettings.shared.suggestionWords
         inFlight = Task { [weak self] in
             guard let self else { return }
             let suffix = await self.predictor.predict(prefix: prefix, promptContext: context, maxWords: maxWords)
@@ -495,7 +571,16 @@ final class SuggestionEngine {
                     self.lastElementRect = f.elementRect
                 }
 
-                guard var suffix, !suffix.isEmpty else { self.dismissGhost(); return }
+                guard var suffix, !suffix.isEmpty else {
+                    // Modelo sem continuação: rede de segurança do dicionário no
+                    // meio da palavra (senão a sombra some à toa).
+                    if midWordFallback, let comp = self.dictFallback(prefix: prefix, language: lang) {
+                        self.showAutocomplete(comp)
+                    } else {
+                        self.dismissGhost()
+                    }
+                    return
+                }
                 // Fallback no meio da palavra: cola a continuação à palavra (sem
                 // espaço inicial), p/ "kubernet" -> "es" e não "kubernet es".
                 if midWordFallback, suffix.first == " " {
@@ -507,14 +592,45 @@ final class SuggestionEngine {
         }
     }
 
+    /// Completação pelo dicionário para a última palavra do prefixo — rede de
+    /// segurança quando o modelo não devolve continuação no meio da palavra.
+    private func dictFallback(prefix: String, language: String) -> String? {
+        guard prefix.last.map({ $0.isLetter || $0.isNumber }) == true else { return nil }
+        let partial = String(prefix.reversed().prefix { $0.isLetter }.reversed())
+        return bestCompletion(forPartial: partial, language: language)
+    }
+
+    /// Mínimo de letras para tentar completar pelo dicionário. O dicionário
+    /// embutido funciona já a partir de 1 letra (o NSSpellChecker exige 2), mas
+    /// sugerir já na 1ª letra é só frequência global (sem contexto) e gera
+    /// "flicker"; 2 é o equilíbrio. Mude para 1 para completar desde a primeira
+    /// letra, estilo Cotypist (substitui o fallback do modelo nesse caso → mais frio).
+    private let minPartialForCompletion = 2
+
     /// Melhor completação para uma palavra começada, como SUFIXO a inserir.
-    /// Entre as completações do dicionário (no `language` dado), com a
-    /// personalização ligada, prefere a que VOCÊ mais escreve; senão, a 1ª.
+    /// Fonte primária: o DICIONÁRIO embutido (ranqueado por FREQUÊNCIA; cobre
+    /// nomes próprios, termos técnicos e gírias que cairiam no LLM). O
+    /// NSSpellChecker entra como COMPLEMENTO (palavras que o dicionário não tem).
+    /// Com a personalização ligada, prefere a completação que VOCÊ mais escreve;
+    /// senão, a mais frequente.
     private func bestCompletion(forPartial partial: String, language: String) -> String? {
-        let comps = SpellCorrector.completions(forPartialWord: partial, language: language)
-        guard let first = comps.first else { return nil }
+        guard partial.count >= minPartialForCompletion else { return nil }
+
+        // 1) Dicionário embutido — instantâneo, sem GPU, ordenado por frequência.
+        var ranked = WordDictionary.completions(forPartial: partial, language: language)
+
+        // 2) NSSpellChecker (exige 2+ letras): acrescenta o que faltar, sem repetir.
+        if partial.count >= 2 {
+            let have = Set(ranked.map { $0.lowercased() })
+            for c in SpellCorrector.completions(forPartialWord: partial, language: language)
+            where !have.contains(c.lowercased()) {
+                ranked.append(c)
+            }
+        }
+
+        guard let first = ranked.first else { return nil }
         let chosen = (SombraSettings.shared.personalizeEnabled
-                      ? WritingProfile.shared.preferredCompletion(among: comps) : nil) ?? first
+                      ? WritingProfile.shared.preferredCompletion(among: ranked) : nil) ?? first
         let suffix = String(chosen.dropFirst(partial.count))
         return suffix.isEmpty ? nil : suffix
     }

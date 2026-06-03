@@ -126,6 +126,78 @@ final class LlamaPredictor: Predictor {
         }
     }
 
+    /// "Leque": gera `count` candidatos de continuação para o mesmo contexto
+    /// (top-k tokens iniciais expandidos no shim C), cada um com até `maxWords`
+    /// palavras. Mesma montagem de prompt/sanitização/cancelamento do `predict`.
+    /// Devolve em ordem de probabilidade, sem duplicatas nem lixo só-símbolo.
+    func candidates(prefix: String, promptContext: String, count: Int, maxWords: Int) async -> [String] {
+        let k = Int32(min(max(count, 1), 16))
+        let words = Int32(min(max(maxWords, 1), 6))
+        let maxTokensEach = words * 6 + 2
+        let isInstruct = self.isInstruct
+        let maxPrefix = SombraSettings.shared.contextChars
+        // Mesmo contador de geração do predict: pedir o leque cancela uma predição
+        // (ou leque) anterior em curso, e vice-versa — single-flight, sem backlog.
+        genPtr.pointee &+= 1
+        let myGen = genPtr.pointee
+        let genPtr = self.genPtr
+        return await withCheckedContinuation { (cont: CheckedContinuation<[String], Never>) in
+            queue.async { [handle] in
+                guard genPtr.pointee == myGen else { cont.resume(returning: []); return }
+                let prompt = Self.buildPrompt(prefix: prefix, context: promptContext,
+                                              isInstruct: isInstruct, handle: handle,
+                                              maxPrefixChars: maxPrefix)
+                let cap = 1024
+                var buf = [CChar](repeating: 0, count: cap)
+                let nc = sombra_candidates(handle.ctx, prompt, k, words, maxTokensEach,
+                                           &buf, Int32(cap), genPtr, myGen)
+                guard nc > 0 else { cont.resume(returning: []); return }
+                var seen = Set<String>()
+                var result: [String] = []
+                for line in String(cString: buf).split(separator: "\n") {
+                    var s = Self.sanitize(String(line))
+                    while s.first == " " { s.removeFirst() }            // candidatos = início de palavra
+                    while let last = s.last, !(last.isLetter || last.isNumber) { s.removeLast() } // apara pontuação final
+                    // Completação é de PALAVRA: precisa começar com letra (corta o
+                    // lixo numérico/símbolo que modelos pequenos cospem: "201.", "12").
+                    guard let f = s.first, f.isLetter, s.count >= 2 else { continue }
+                    let key = s.lowercased()
+                    if seen.insert(key).inserted { result.append(s) }
+                }
+                cont.resume(returning: result)
+            }
+        }
+    }
+
+    /// Reordena `candidates` (palavras do dicionário, já começando com o que foi
+    /// digitado) pela probabilidade do modelo no contexto. As LETRAS vêm do
+    /// dicionário (corretas); o modelo só ESCOLHE — sem corte por tokenização.
+    func rank(candidates: [String], contextPrefix: String, promptContext: String) async -> [String] {
+        guard !candidates.isEmpty else { return [] }
+        let cands = Array(candidates.prefix(16))
+        guard cands.count > 1 else { return cands }   // 1 candidato: nada a ranquear
+        let joined = cands.joined(separator: "\n")
+        let isInstruct = self.isInstruct
+        let maxPrefix = SombraSettings.shared.contextChars
+        genPtr.pointee &+= 1
+        let myGen = genPtr.pointee
+        let genPtr = self.genPtr
+        return await withCheckedContinuation { (cont: CheckedContinuation<[String], Never>) in
+            queue.async { [handle] in
+                guard genPtr.pointee == myGen else { cont.resume(returning: cands); return }
+                let prompt = Self.buildPrompt(prefix: contextPrefix, context: promptContext,
+                                              isInstruct: isInstruct, handle: handle,
+                                              maxPrefixChars: maxPrefix)
+                let cap = 1024
+                var buf = [CChar](repeating: 0, count: cap)
+                let n = sombra_rank(handle.ctx, prompt, joined, &buf, Int32(cap), genPtr, myGen)
+                guard n > 0 else { cont.resume(returning: cands); return }   // falha → ordem do dict
+                let ordered = String(cString: buf).split(separator: "\n").map(String.init)
+                cont.resume(returning: ordered.isEmpty ? cands : ordered)
+            }
+        }
+    }
+
     /// Remove markup que modelos pequenos às vezes emitem (tags tipo `<s>`,
     /// `<u>...</u>`, `<bos>`), resgatando o texto útil em volta. Também colapsa
     /// espaços/quebras. Não toca em `<` solto sem fechar tag (ex.: "a < b").

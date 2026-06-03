@@ -30,5 +30,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         engine?.stop()
+        WritingProfile.shared.save()   // persiste o perfil antes de sair
+        // O ggml-metal ABORTA nos destrutores estáticos ao encerrar o processo
+        // (ggml_metal_rsets_free → ggml_abort → abort), causando o "crash" ao
+        // fechar. Saímos direto, pulando o teardown do C++ — o SO recupera tudo.
+        // (Mesmo motivo do _exit no --selftest.)
+        fflush(nil)
+        _exit(0)
     }
 }

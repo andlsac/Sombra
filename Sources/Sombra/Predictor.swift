@@ -10,6 +10,18 @@ protocol Predictor: AnyObject {
     /// Deve ser cancelável e rodar fora do main thread.
     func predict(prefix: String, promptContext: String, maxWords: Int) async -> String?
 
+    /// "Leque": vários candidatos de continuação para o MESMO contexto, em ordem
+    /// de probabilidade. Usado para completar com contexto a partir das letras
+    /// digitadas (o motor filtra o leque pelo prefixo). Cancelável; fora da main.
+    /// `count` = quantos candidatos; `maxWords` = tamanho de cada um.
+    func candidates(prefix: String, promptContext: String, count: Int, maxWords: Int) async -> [String]
+
+    /// Reordena `candidates` (palavras inteiras já começando com o que foi
+    /// digitado) pela probabilidade do MODELO no contexto. O dicionário garante
+    /// as letras certas; o modelo escolhe a que cabe na frase. `contextPrefix` =
+    /// texto antes da palavra (sem a parcial). Cancelável; fora da main.
+    func rank(candidates: [String], contextPrefix: String, promptContext: String) async -> [String]
+
     /// Personalização: favorece as palavras dadas com um bônus em logits.
     /// `strength` <= 0 ou lista vazia remove o viés.
     func setBias(words: [String], strength: Float)
@@ -22,6 +34,11 @@ extension Predictor {
     // Padrão: sem personalização nem temperatura (ex.: HeuristicPredictor).
     func setBias(words: [String], strength: Float) {}
     func setTemperature(_ temperature: Double) {}
+    // Padrão: sem leque (o HeuristicPredictor não gera candidatos de IA; nesse
+    // caso o motor usa o dicionário/heurística como fallback).
+    func candidates(prefix: String, promptContext: String, count: Int, maxWords: Int) async -> [String] { [] }
+    // Padrão: sem ranqueio por modelo → devolve a ordem original (do dicionário).
+    func rank(candidates: [String], contextPrefix: String, promptContext: String) async -> [String] { candidates }
 }
 
 /// Placeholder determinístico para validar o loop ponta-a-ponta.
