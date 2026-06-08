@@ -1,6 +1,7 @@
 import AppKit
 import os
 import Combine
+import ApplicationServices
 
 /// Estado REAL do modelo. `.ready` só após o pré-aquecimento (o modelo de fato
 /// rodou uma inferência) — não é "memória" do último caminho salvo.
@@ -160,12 +161,25 @@ final class SuggestionEngine {
 
     private(set) var enabled = true
 
-    // Debounce: só prevê após o usuário pausar brevemente a digitação.
-    // Curto porque o KV-cache deixou o reprocessamento barato.
+    // Debounce ADAPTATIVO: só avalia depois que o usuário PAUSA a digitação, e a
+    // espera CRESCE com o custo de ler o app focado via Acessibilidade. Em apps
+    // Electron/Chromium (Claude, Brave, Slack) cada leitura AX é uma ida-e-volta
+    // à main thread DO PRÓPRIO APP — ler a cada tecla satura essa thread e TRAVA
+    // o campo onde se digita (o textbox "engasga" ao digitar rápido). Esperar uma
+    // pausa real evita o afogamento; nativo (AX barato) segue responsivo (Cotypist).
     private var lastKeystroke = Date.distantPast
-    // Curto = responsivo (estilo Cotypist). Seguro agora que gerações obsoletas
-    // são abortadas (cancelamento), então não acumula carga/calor.
-    private let debounce: TimeInterval = 0.045
+    // Custo médio (s) das leituras AX, suavizado (EMA) — calibra o debounce sozinho.
+    private var readCostEMA: TimeInterval = 0
+    private var debounce: TimeInterval {
+        if readCostEMA >= 0.010 { return 0.28 } // app lento (AX caro, ex.: Electron)
+        if readCostEMA >= 0.004 { return 0.16 }
+        return 0.08                              // app nativo (AX barato): responsivo
+    }
+
+    // Estado da última leitura completa, p/ a sonda barata do timer decidir se
+    // algo mudou sem refazer a leitura inteira quando cursor/campo estão parados.
+    private var lastProbeElement: AXUIElement?
+    private var lastProbeCaret: Int = -1
 
     // Janela em que o polling é suspenso enquanto o texto aceito é injetado
     // (evita reagir ao estado transitório do campo).
@@ -328,9 +342,25 @@ final class SuggestionEngine {
         // já dispara no momento certo após a pausa.
         if !forced {
             guard Date().timeIntervalSince(lastKeystroke) >= debounce else { return }
+            // Sonda barata (2 chamadas AX): se o campo focado e o cursor não
+            // mudaram desde a última leitura, NÃO refaz a leitura completa (que são
+            // ~10+ chamadas AX) — evita martelar a main thread do app em idle.
+            // Sonda nil (ex.: Electron ainda sem cursor) cai na leitura, que liga a
+            // árvore de AX do Electron e trata o nil normalmente.
+            if let p = AXReader.caretProbe(),
+               let le = lastProbeElement, p.caret == lastProbeCaret, CFEqual(le, p.element) {
+                return
+            }
         }
 
+        let t0 = DispatchTime.now()
         guard let focus = AXReader.read() else { dismissGhost(); indicator.hide(); return }
+        // Custo da leitura (suavizado) → calibra o debounce: apps lentos (Electron)
+        // passam a esperar uma pausa maior antes da próxima leitura.
+        let dt = Double(DispatchTime.now().uptimeNanoseconds &- t0.uptimeNanoseconds) / 1_000_000_000
+        readCostEMA = readCostEMA == 0 ? dt : readCostEMA * 0.6 + dt * 0.4
+        lastProbeElement = focus.element
+        lastProbeCaret = focus.caret
         lastCaretRect = focus.caretRect
         lastElementRect = focus.elementRect
 

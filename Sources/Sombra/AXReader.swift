@@ -42,6 +42,14 @@ enum AXReader {
         return (f as! AXUIElement)
     }
 
+    /// Sonda leve do cursor: elemento focado + posição (2 chamadas AX), sem ler
+    /// texto, retângulos nem papéis. O timer de segurança usa isto p/ detectar de
+    /// forma barata se algo mudou antes de pagar a leitura completa (`read()`).
+    static func caretProbe() -> (element: AXUIElement, caret: Int)? {
+        guard let element = focusedTextField(), let caret = selectedCaret(element) else { return nil }
+        return (element, caret)
+    }
+
     static func read() -> FocusedText? {
         guard let element = focusedTextField() else { return nil }
         guard let caret = selectedCaret(element) else {
